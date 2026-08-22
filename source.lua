@@ -12,15 +12,16 @@ local httpRequest = (syn and syn.request) or (http and http.request) or http_req
 -- Theme
 ----------------------------------------------------------------------
 local Theme = {
-	Background   = Color3.fromRGB(31, 29, 26),
-    Secondary    = Color3.fromRGB(40, 38, 34),
-    Element      = Color3.fromRGB(50, 47, 42),
-    ElementHover = Color3.fromRGB(60, 57, 51),
-    Stroke       = Color3.fromRGB(80, 76, 68),
-    Text         = Color3.fromRGB(236, 228, 215),
-    SubText      = Color3.fromRGB(160, 152, 138),
-    Warning      = Color3.fromRGB(255, 190, 70),
-    Accent       = Color3.fromRGB(205, 140, 90),
+	Background = Color3.fromRGB(16, 16, 16),
+	Secondary  = Color3.fromRGB(27, 27, 27),
+	Element    = Color3.fromRGB(34, 34, 34),
+	ElementHover = Color3.fromRGB(42, 42, 42),
+	Off        = Color3.fromRGB(55, 55, 55),
+	Stroke     = Color3.fromRGB(171, 171, 171),
+	Text       = Color3.fromRGB(255, 255, 255),
+	SubText    = Color3.fromRGB(175, 175, 175),
+	Warning    = Color3.fromRGB(255, 190, 70),
+	Accent     = Color3.fromRGB(100, 160, 255),
 }
 
 local BUILDER_ICONS = "rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json"
