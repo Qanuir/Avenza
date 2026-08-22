@@ -1,8 +1,3 @@
---[[
-	Vaehz UI Library
-	Pro of AI
-]]
-
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -290,8 +285,8 @@ function Library:CreateWindow(cfg)
 
 	local BG = create("CanvasGroup", {
 		Name = "Window",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0.1, 0),
 		Size = UDim2.fromOffset(532, 410),
 		BackgroundColor3 = Theme.Background,
 		BackgroundTransparency = 0.05,
