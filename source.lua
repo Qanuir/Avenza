@@ -347,9 +347,9 @@ function Library:CreateWindow(cfg)
 	local YtBtn    = ctrlBtn("youtube", -74, Color3.fromRGB(255, 60, 60))
 	local DcBtn    = ctrlBtn("discord", -106, Color3.fromRGB(88, 101, 242))
 
-	local YT_LINK = "https://youtube.com/@vaehz"
-	local DC_LINK = "https://discord.gg/vaehz"
-	local DC_CODE = "vaehz"
+	local YT_LINK = "https://youtube.com/@Qanuir"
+	local DC_LINK = "https://discord.gg/Qanuir"
+	local DC_CODE = "Qanuir"
 
 	YtBtn.Activated:Connect(function()
 		local copied = copyToClipboard(YT_LINK)
