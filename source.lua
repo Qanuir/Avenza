@@ -1,3 +1,4 @@
+
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -513,7 +514,7 @@ function Library:CreateWindow(cfg)
 		Parent = Rail,
 	})
 	corner(PowerBtn, 14 * scale)
-	local powerIc = icon("frame-collapsed", 17 * scale, false, Theme.SubText)
+	local powerIc = icon("power-off", 17 * scale, false, Theme.SubText)
 	powerIc.AnchorPoint = Vector2.new(0.5, 0.5)
 	powerIc.Position = UDim2.new(0.5, 0, 0.5, 0)
 	powerIc.Parent = PowerBtn
