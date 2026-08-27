@@ -8,6 +8,20 @@ local setClipboard = setclipboard or toclipboard or writeclipboard or write_clip
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
 ----------------------------------------------------------------------
+-- Singleton guard (no duplicate execution)
+----------------------------------------------------------------------
+local ENV = (getgenv and getgenv()) or shared or _G
+local REG_KEY = "__VaehzUI_Instance"
+
+do
+	local prev = ENV[REG_KEY]
+	if type(prev) == "table" and prev.Destroy then
+		pcall(function() prev:Destroy() end)
+	end
+	ENV[REG_KEY] = nil
+end
+
+----------------------------------------------------------------------
 -- Theme  (visionOS-inspired frosted glass)
 ----------------------------------------------------------------------
 local Theme = {
@@ -35,6 +49,16 @@ local FONT_MAIN  = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.Fon
 
 local TI    = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TI_S  = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+----------------------------------------------------------------------
+-- Connection tracking (for proper destroy)
+----------------------------------------------------------------------
+local Connections = {}
+
+local function track(conn)
+	table.insert(Connections, conn)
+	return conn
+end
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -109,14 +133,14 @@ local function makeDraggable(frame, handle)
 			dragInput = inp
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(inp)
+	track(UserInputService.InputChanged:Connect(function(inp)
 		if inp == dragInput and dragging then
 			local delta = inp.Position - startPos
 			frame.Position = UDim2.new(
 				startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
 				startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y)
 		end
-	end)
+	end))
 end
 
 local function bindDrag(region, onUpdate)
@@ -137,11 +161,11 @@ local function bindDrag(region, onUpdate)
 			dragging = false
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(inp)
+	track(UserInputService.InputChanged:Connect(function(inp)
 		if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
 			upd(inp)
 		end
-	end)
+	end))
 end
 
 local function getGuiParent()
@@ -178,6 +202,14 @@ end
 ----------------------------------------------------------------------
 local Library = {}
 Library.__index = Library
+Library._destroyed = false
+
+-- kill any stale gui left over from a previous run / older build
+local GuiParent = getGuiParent()
+do
+	local stale = GuiParent:FindFirstChild("VaehzUI")
+	if stale then pcall(function() stale:Destroy() end) end
+end
 
 local ScreenGui = create("ScreenGui", {
 	Name = "VaehzUI",
@@ -187,7 +219,23 @@ local ScreenGui = create("ScreenGui", {
 	DisplayOrder = 999,
 })
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(ScreenGui) end end)
-ScreenGui.Parent = getGuiParent()
+ScreenGui.Parent = GuiParent
+
+function Library:Destroy()
+	if Library._destroyed then return end
+	Library._destroyed = true
+	for _, conn in Connections do
+		pcall(function() conn:Disconnect() end)
+	end
+	table.clear(Connections)
+	pcall(function() ScreenGui:Destroy() end)
+	if ENV[REG_KEY] == Library then
+		ENV[REG_KEY] = nil
+	end
+end
+
+-- register as the active singleton instance
+ENV[REG_KEY] = Library
 
 local NotifHolder = create("Frame", {
 	Name = "Notifications",
@@ -206,6 +254,7 @@ local NotifHolder = create("Frame", {
 })
 
 function Library:Notify(cfg)
+	if Library._destroyed then return end
 	cfg = cfg or {}
 	local dur = cfg.Duration or 4
 
@@ -260,13 +309,14 @@ function Library:Notify(cfg)
 	if bodyLbl then tween(bodyLbl, TI_S, { TextTransparency = 0 }) end
 
 	task.delay(dur, function()
+		if Library._destroyed or not card.Parent then return end
 		tween(card, TI, { BackgroundTransparency = 1, Position = UDim2.new(0, 26, 0, 0) })
 		tween(st, TI, { Transparency = 1 })
 		tween(accent, TI, { BackgroundTransparency = 1 })
 		tween(titleLbl, TI, { TextTransparency = 1 })
 		if bodyLbl then tween(bodyLbl, TI, { TextTransparency = 1 }) end
 		task.wait(0.2)
-		card:Destroy()
+		if card.Parent then card:Destroy() end
 	end)
 end
 
@@ -488,8 +538,9 @@ function Library:CreateWindow(cfg)
 	PowerBtn.Activated:Connect(function()
 		tween(winScale, TI, { Scale = 0.96 })
 		tween(BG, TI, { GroupTransparency = 1 })
-		task.wait(0.18)
-		ScreenGui:Destroy()
+		task.delay(0.18, function()
+			Library:Destroy()
+		end)
 	end)
 
 	local minimized = false
@@ -503,20 +554,22 @@ function Library:CreateWindow(cfg)
 		else
 			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, WIN_H) })
 			tween(TopBar, TI_S, { Position = UDim2.new(0, SIDE_W, 0, 0), Size = UDim2.new(1, -SIDE_W, 0, TOP_H) })
-			task.wait(0.12)
-			Rail.Visible = true
-			Content.Visible = true
+			task.delay(0.12, function()
+				if Library._destroyed or not minimized then return end
+				Rail.Visible = true
+				Content.Visible = true
+			end)
 		end
 	end)
 
 	local hidden = false
-	UserInputService.InputBegan:Connect(function(inp, gp)
+	track(UserInputService.InputBegan:Connect(function(inp, gp)
 		if gp then return end
 		if inp.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift) then
 			hidden = not hidden
 			BG.Visible = not hidden
 		end
-	end)
+	end))
 
 	----------------------------------------------------------------
 	-- Tabs
@@ -706,9 +759,11 @@ function Library:CreateWindow(cfg)
 			btnEl.Activated:Connect(function()
 				tween(chip, TI, { BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.15 })
 				tween(chipIc, TI, { TextColor3 = Theme.Text })
-				task.wait(0.14)
-				tween(chip, TI, { BackgroundColor3 = Theme.Element, BackgroundTransparency = CHIP_T })
-				tween(chipIc, TI, { TextColor3 = Theme.SubText })
+				task.delay(0.14, function()
+					if Library._destroyed or not chip.Parent then return end
+					tween(chip, TI, { BackgroundColor3 = Theme.Element, BackgroundTransparency = CHIP_T })
+					tween(chipIc, TI, { TextColor3 = Theme.SubText })
+				end)
 				if bcfg.Callback then task.spawn(bcfg.Callback) end
 			end)
 			return { Instance = btnEl }
@@ -728,17 +783,17 @@ function Library:CreateWindow(cfg)
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
 				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(1, -(80 * scale), 1, 0), Parent = btnEl,
 			})
-			local track = create("Frame", {
+			local track_ = create("Frame", {
 				BackgroundColor3 = state and Theme.Accent or Theme.Off,
 				BackgroundTransparency = state and 0 or 0.85,
 				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -PAD_MED, 0.5, 0),
 				Size = UDim2.fromOffset(46 * scale, 26 * scale), BorderSizePixel = 0, Parent = btnEl,
 			})
-			corner(track, 13 * scale)
+			corner(track_, 13 * scale)
 			local knob = create("Frame", {
 				BackgroundColor3 = Theme.Text, AnchorPoint = Vector2.new(0, 0.5),
 				Position = state and UDim2.new(1, -(23 * scale), 0.5, 0) or UDim2.new(0, 3 * scale, 0.5, 0),
-				Size = UDim2.fromOffset(20 * scale, 20 * scale), BorderSizePixel = 0, Parent = track,
+				Size = UDim2.fromOffset(20 * scale, 20 * scale), BorderSizePixel = 0, Parent = track_,
 			})
 			corner(knob, 10 * scale)
 			addShadow(knob, 6 * scale, 0.6)
@@ -749,7 +804,7 @@ function Library:CreateWindow(cfg)
 			local api = {}
 			function api:Set(v)
 				state = v
-				tween(track, TI, {
+				tween(track_, TI, {
 					BackgroundColor3 = state and Theme.Accent or Theme.Off,
 					BackgroundTransparency = state and 0 or 0.85,
 				})
@@ -809,24 +864,24 @@ function Library:CreateWindow(cfg)
 				Position = UDim2.new(1, -PAD_MED, 0, 9 * scale),
 				Size = UDim2.new(0, 60 * scale, 0, 16 * scale), Parent = row,
 			})
-			local track = create("Frame", {
+			local trackBar = create("Frame", {
 				BackgroundColor3 = Theme.Off, BackgroundTransparency = 0.85,
 				AnchorPoint = Vector2.new(0, 1),
 				Position = UDim2.new(0, PAD_MED, 1, -12 * scale),
 				Size = UDim2.new(1, -(2 * PAD_MED), 0, 6 * scale),
 				BorderSizePixel = 0, Parent = row,
 			})
-			corner(track, 3 * scale)
+			corner(trackBar, 3 * scale)
 			local fill = create("Frame", {
 				BackgroundColor3 = Theme.Accent,
 				Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
-				BorderSizePixel = 0, Parent = track,
+				BorderSizePixel = 0, Parent = trackBar,
 			})
 			corner(fill, 3 * scale)
 			local knob = create("Frame", {
 				BackgroundColor3 = Theme.Text, AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0),
-				Size = UDim2.fromOffset(16 * scale, 16 * scale), BorderSizePixel = 0, ZIndex = 2, Parent = track,
+				Size = UDim2.fromOffset(16 * scale, 16 * scale), BorderSizePixel = 0, ZIndex = 2, Parent = trackBar,
 			})
 			corner(knob, 8 * scale)
 			addShadow(knob, 6 * scale, 0.6)
@@ -841,7 +896,7 @@ function Library:CreateWindow(cfg)
 				valLbl.Text = tostring(value)
 				if fire and slcfg.Callback then task.spawn(slcfg.Callback, value) end
 			end
-			bindDrag(track, function(ax) apply(ax, true) end)
+			bindDrag(trackBar, function(ax) apply(ax, true) end)
 			function api:Set(v) apply((math.clamp(v, min, max) - min) / (max - min), true) end
 			function api:Get() return value end
 			api.Instance = row
@@ -998,7 +1053,11 @@ function Library:CreateWindow(cfg)
 				open = not open
 				if open then body.Visible = true end
 				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and (ROW_H + 140 * scale) or ROW_H) })
-				if not open then task.delay(0.12, function() if not open then body.Visible = false end end) end
+				if not open then
+					task.delay(0.12, function()
+						if not open and not Library._destroyed then body.Visible = false end
+					end)
+				end
 			end)
 
 			local api = {}
@@ -1132,11 +1191,16 @@ function Library:CreateWindow(cfg)
 
 			local open = false
 			function api._toggle(force)
+				if Library._destroyed then return end
 				if force ~= nil then open = force else open = not open end
 				if open then list.Visible = true end
 				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and openHeight() or ROW_H) })
 				tween(chev, TI, { Rotation = open and 180 or 0 })
-				if not open then task.delay(0.12, function() if not open then list.Visible = false end end) end
+				if not open then
+					task.delay(0.12, function()
+						if not open and not Library._destroyed then list.Visible = false end
+					end)
+				end
 			end
 			header.Activated:Connect(function() api._toggle() end)
 
@@ -1168,6 +1232,10 @@ function Library:CreateWindow(cfg)
 		end
 
 		return Tab
+	end
+
+	function Window:Destroy()
+		Library:Destroy()
 	end
 
 	Window.Instance = BG
