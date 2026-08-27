@@ -1,14 +1,15 @@
 -- ============================================================================
---  Library Load
+--  Library Load 
 -- ============================================================================
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Qanuir/Avenza/main/source.lua"))()
 
 -- ============================================================================
---  Main Window
+--  Main Window 
 -- ============================================================================
 local Window = Library:CreateWindow({
-    Title = "Avenza UI – Full Example",
-    Accent = Color3.fromRGB(100, 160, 255)
+    Title = "Avenza UI (Mobile)",
+    Accent = Color3.fromRGB(100, 160, 255),
+    Scale = 0.75   -- <-- makes everything smaller: fonts, paddings, row heights, etc.
 })
 
 -- ============================================================================
