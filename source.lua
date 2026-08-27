@@ -8,7 +8,7 @@ local setClipboard = setclipboard or toclipboard or writeclipboard or write_clip
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
 ----------------------------------------------------------------------
--- Singleton guard (no duplicate execution)
+-- Singleton guard
 ----------------------------------------------------------------------
 local ENV = (getgenv and getgenv()) or shared or _G
 local REG_KEY = "__VaehzUI_Instance"
@@ -22,12 +22,12 @@ do
 end
 
 ----------------------------------------------------------------------
--- Theme  (visionOS-inspired frosted glass)
+-- Theme
 ----------------------------------------------------------------------
 local Theme = {
 	Background = Color3.fromRGB(18, 18, 22),
 	Secondary  = Color3.fromRGB(26, 26, 31),
-	Element    = Color3.fromRGB(255, 255, 255), -- glass fills (used with GLASS_T)
+	Element    = Color3.fromRGB(255, 255, 255),
 	ElementHover = Color3.fromRGB(255, 255, 255),
 	Off        = Color3.fromRGB(255, 255, 255),
 	Stroke     = Color3.fromRGB(255, 255, 255),
@@ -37,11 +37,10 @@ local Theme = {
 	Accent     = Color3.fromRGB(88, 142, 255),
 }
 
--- glass opacity levels
-local GLASS_T  = 0.94 -- resting card fill
-local GLASS_HT = 0.89 -- hovered card fill
-local CHIP_T   = 0.88 -- chips / small controls
-local STROKE_T = 0.90 -- hairline strokes
+local GLASS_T  = 0.94
+local GLASS_HT = 0.89
+local CHIP_T   = 0.88
+local STROKE_T = 0.90
 
 local BUILDER_ICONS = "rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json"
 local FONT_TITLE = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
@@ -52,7 +51,7 @@ local TI_S  = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.O
 local TI_R  = TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
 ----------------------------------------------------------------------
--- Connection tracking (for proper destroy)
+-- Connection tracking
 ----------------------------------------------------------------------
 local Connections = {}
 
@@ -95,7 +94,6 @@ local function tween(obj, info, props)
 	return t
 end
 
--- expanding press pulse; auto-clips the host
 local function ripple(host, color)
 	if host.ClipsDescendants == false then host.ClipsDescendants = true end
 	local d = math.max(host.AbsoluteSize.X, host.AbsoluteSize.Y) * 2.2
@@ -114,7 +112,6 @@ local function ripple(host, color)
 	task.delay(0.5, function() if r.Parent then r:Destroy() end end)
 end
 
--- icons: BuilderIcons glyphs, rbxassetid images, with a hard fallback if the font fails
 local function icon(name, size, filled, color)
 	if type(name) == "string" and (name:match("^rbxassetid://") or name:match("^%d+$")) then
 		return create("ImageLabel", {
@@ -138,7 +135,6 @@ local function icon(name, size, filled, color)
 	})
 end
 
--- tint either TextLabels (TextColor3) or ImageLabels (ImageColor3) safely
 local function tintIcon(ic, color)
 	if ic:IsA("ImageLabel") or ic:IsA("ImageButton") then
 		return tween(ic, TI, { ImageColor3 = color })
@@ -174,7 +170,6 @@ local function makeDraggable(frame, handle)
 	end))
 end
 
--- onUpdate(ax, ay, ended) -- ended=true only on mouse/touch release
 local function bindDrag(region, onUpdate)
 	local dragging = false
 	local function upd(inp, ended)
@@ -239,7 +234,6 @@ Library._destroyed = false
 Library._scale = 1
 Library._cleanups = {}
 
--- kill any stale gui left over from a previous run / older build
 local GuiParent = getGuiParent()
 do
 	local stale = GuiParent:FindFirstChild("VaehzUI")
@@ -273,7 +267,6 @@ function Library:Destroy()
 	end
 end
 
--- register as the active singleton instance
 ENV[REG_KEY] = Library
 
 local NotifHolder = create("Frame", {
@@ -293,7 +286,7 @@ local NotifHolder = create("Frame", {
 })
 
 ----------------------------------------------------------------------
--- Tooltip manager (single floating label, follows cursor)
+-- Tooltip manager
 ----------------------------------------------------------------------
 local Tooltip = {}
 do
@@ -416,7 +409,6 @@ function Library:Notify(cfg)
 		})
 	end
 
-	-- pop in/out with UIScale so we never fight UIListLayout over Position (no clip artifacts)
 	local pop = create("UIScale", { Scale = 0.96, Parent = card })
 	tween(pop, TI_S, { Scale = 1 })
 	tween(card, TI_S, { BackgroundTransparency = 0.06 })
@@ -448,7 +440,6 @@ function Library:CreateWindow(cfg)
 	local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
 	local vpW, vpH = vp.X, vp.Y
 
-	-- Base window dimensions
 	local BASE_W, BASE_H = 580, 400
 	local scale = cfg.Scale or 0.8
 	Library._scale = scale
@@ -469,7 +460,6 @@ function Library:CreateWindow(cfg)
 
 	local Window = { Tabs = {}, _current = nil }
 
-	-- Starting position: centred
 	local startX = vpW * 0.5 - WIN_W * 0.5
 	local startY = vpH * 0.12
 
@@ -492,9 +482,9 @@ function Library:CreateWindow(cfg)
 	tween(BG, TI_S, { GroupTransparency = 0 })
 	tween(winScale, TI_S, { Scale = 1 })
 
-	------------------------------------------------------------
-	-- Top bar (transparent, floats on the glass)
-	------------------------------------------------------------
+	----------------------------------------------------------------------
+	-- Top bar
+	----------------------------------------------------------------------
 	local TopBar = create("Frame", {
 		Name = "TopBar",
 		BackgroundTransparency = 1,
@@ -608,9 +598,9 @@ function Library:CreateWindow(cfg)
 		Library:Notify({ Title = "Discord", Content = msg, Duration = 3 })
 	end)
 
-	------------------------------------------------------------
-	-- Icon rail (left, full height) + power button
-	------------------------------------------------------------
+	----------------------------------------------------------------------
+	-- Icon rail
+	----------------------------------------------------------------------
 	local Rail = create("Frame", {
 		Name = "Rail",
 		BackgroundTransparency = 1,
@@ -687,9 +677,9 @@ function Library:CreateWindow(cfg)
 		end)
 	end)
 
-	------------------------------------------------------------
+	----------------------------------------------------------------------
 	-- Minimize / restore
-	------------------------------------------------------------
+	----------------------------------------------------------------------
 	local minimized = false
 	local fullSize = UDim2.fromOffset(WIN_W, WIN_H)
 	MinBtn.Activated:Connect(function()
@@ -710,9 +700,9 @@ function Library:CreateWindow(cfg)
 		end
 	end)
 
-	------------------------------------------------------------
+	----------------------------------------------------------------------
 	-- Hide / show
-	------------------------------------------------------------
+	----------------------------------------------------------------------
 	local hidden = false
 
 	local function setHidden(h)
@@ -735,15 +725,14 @@ function Library:CreateWindow(cfg)
 
 	track(UserInputService.InputBegan:Connect(function(inp, gp)
 		if gp then return end
-		if inp.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift)
-			or (cfg.GamepadToggle and inp.KeyCode == Enum.KeyCode.DPadUp) then
+		if inp.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift) then
 			setHidden(not hidden)
 		end
 	end))
 
-	----------------------------------------------------------------
+	----------------------------------------------------------------------
 	-- Tabs
-	----------------------------------------------------------------
+	----------------------------------------------------------------------
 	function Window:CreateTab(tcfg)
 		tcfg = tcfg or {}
 		local Tab = { _order = 0 }
@@ -827,7 +816,6 @@ function Library:CreateWindow(cfg)
 		table.insert(Window.Tabs, Tab)
 		if #Window.Tabs == 1 then select() end
 
-		-- badge notification dot (auto-clears when the tab is opened)
 		function Tab:SetBadge(v)
 			badge.Visible = (v == true) and Window._current ~= Tab
 		end
@@ -846,20 +834,19 @@ function Library:CreateWindow(cfg)
 			return row
 		end
 
-		-- shared hover: fill lift + accent hairline glow
 		local function rowHover(row, rowStroke)
-			return function() -- enter
+			return function()
 				tween(row, TI, { BackgroundTransparency = GLASS_HT })
 				if rowStroke then tween(rowStroke, TI, { Color = Theme.Accent, Transparency = 0.7 }) end
-			end, function() -- leave
+			end, function()
 				tween(row, TI, { BackgroundTransparency = GLASS_T })
 				if rowStroke then tween(rowStroke, TI, { Color = Theme.Stroke, Transparency = STROKE_T }) end
 			end
 		end
 
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		-- 1. Label
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		function Tab:CreateLabel(text)
 			Tab._order += 1
 			local row = create("Frame", {
@@ -878,9 +865,9 @@ function Library:CreateWindow(cfg)
 			return { Set = function(_, t) lbl.Text = t end, Instance = row }
 		end
 
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		-- 2. Warning
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		function Tab:CreateWarning(text)
 			local row = newRow(0)
 			row.AutomaticSize = Enum.AutomaticSize.Y
@@ -913,9 +900,9 @@ function Library:CreateWindow(cfg)
 			return { Set = function(_, t) lbl.Text = t end, Instance = row }
 		end
 
-		------------------------------------------------------------
-		-- 3. Button  (label left, circular action chip right)
-		------------------------------------------------------------
+		----------------------------------------------------------------------
+		-- 3. Button
+		----------------------------------------------------------------------
 		function Tab:CreateButton(bcfg)
 			bcfg = bcfg or {}
 			Tab._order += 1
@@ -975,9 +962,9 @@ function Library:CreateWindow(cfg)
 			return { Instance = btnEl }
 		end
 
-		------------------------------------------------------------
-		-- 4. Toggle  (iOS-style pill)
-		------------------------------------------------------------
+		----------------------------------------------------------------------
+		-- 4. Toggle
+		----------------------------------------------------------------------
 		function Tab:CreateToggle(tocfg)
 			tocfg = tocfg or {}
 			local state = tocfg.Default or false
@@ -1030,9 +1017,9 @@ function Library:CreateWindow(cfg)
 			return api
 		end
 
-		------------------------------------------------------------
-		-- 5. Stat / Status
-		------------------------------------------------------------
+		----------------------------------------------------------------------
+		-- 5. Stat
+		----------------------------------------------------------------------
 		function Tab:CreateStat(scfg)
 			scfg = scfg or {}
 			local row = newRow(40 * scale)
@@ -1053,9 +1040,9 @@ function Library:CreateWindow(cfg)
 			return { Set = function(_, v) valLbl.Text = tostring(v) end, Instance = row }
 		end
 
-		------------------------------------------------------------
-		-- 6. Slider (drag bar + type-in value + suffix + step buttons)
-		------------------------------------------------------------
+		----------------------------------------------------------------------
+		-- 6. Slider
+		----------------------------------------------------------------------
 		function Tab:CreateSlider(slcfg)
 			slcfg = slcfg or {}
 			local min, max = slcfg.Min or 0, slcfg.Max or 100
@@ -1158,7 +1145,6 @@ function Library:CreateWindow(cfg)
 				if fire and slcfg.Callback then task.spawn(slcfg.Callback, value) end
 			end
 
-			-- fire on release by default; cfg.Live = true for per-move updates
 			bindDrag(trackBar, function(ax, _, ended)
 				if ended then
 					apply(ax, true)
@@ -1193,9 +1179,9 @@ function Library:CreateWindow(cfg)
 			return api
 		end
 
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		-- 7. Textbox
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		function Tab:CreateTextbox(txcfg)
 			txcfg = txcfg or {}
 			local row = newRow(ROW_H)
@@ -1242,9 +1228,9 @@ function Library:CreateWindow(cfg)
 			}
 		end
 
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		-- 8. Color Picker
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		function Tab:CreateColorPicker(ccfg)
 			ccfg = ccfg or {}
 			local color = ccfg.Default or Color3.fromRGB(255, 0, 0)
@@ -1338,7 +1324,7 @@ function Library:CreateWindow(cfg)
 				swatch.BackgroundColor3 = color
 				if fire and ccfg.Callback then task.spawn(ccfg.Callback, color) end
 			end
-			-- callbacks fire on release; cfg.Live = true for per-move updates
+
 			bindDrag(sv, function(ax, ay, ended)
 				s = ax; v = 1 - ay
 				refresh(ccfg.Live == true or ended)
@@ -1366,13 +1352,14 @@ function Library:CreateWindow(cfg)
 
 			local api = {}
 			function api:Set(c) h, s, v = c:ToHSV(); refresh(true) end
-			function api:Get() return color end			api.Instance = row
+			function api:Get() return color end
+			api.Instance = row
 			return api
 		end
 
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		-- 9. Dropdown
-		------------------------------------------------------------
+		----------------------------------------------------------------------
 		function Tab:CreateDropdown(dcfg)
 			dcfg = dcfg or {}
 			local options = dcfg.Options or {}
