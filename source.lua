@@ -212,6 +212,8 @@ function Library:Notify(cfg)
 	cfg = cfg or {}
 	local dur = cfg.Duration or 4
 
+	-- scale the notification too (use global scale from last window? we'll just keep fixed small size)
+	-- For simplicity we don't scale notifications; they are small enough. You could add a scale param if needed.
 	local card = create("Frame", {
 		BackgroundColor3 = Theme.Secondary,
 		BackgroundTransparency = 1,
@@ -281,41 +283,71 @@ function Library:CreateWindow(cfg)
 	cfg = cfg or {}
 	if cfg.Accent then Theme.Accent = cfg.Accent end
 
+	-- Scaling factor (default 1.0, mobile use ~0.75)
+	local scale = cfg.Scale or 1
+
+	-- Base dimensions (all multiplied by scale)
+	local WIN_W = 532 * scale
+	local WIN_H = 410 * scale
+	local TOP_H = 45 * scale
+	local SIDE_W = 140 * scale
+	local BTN_H = 34 * scale  -- base row height (for toggles, buttons, etc.)
+	local FONT_TITLE_SZ = 16 * scale
+	local FONT_MAIN_SZ = 14 * scale
+	local FONT_SUB_SZ = 12 * scale
+	local CORNER_R = 6 * scale
+	local PAD_SMALL = 8 * scale
+	local PAD_MED = 10 * scale
+	local PAD_LARGE = 12 * scale
+
+	-- Helper to create rows with scaled height
+	local function newRow(height)
+		local row = create("Frame", {
+			BackgroundColor3 = Theme.Element,
+			Size = UDim2.new(1, 0, 0, height or BTN_H),
+			LayoutOrder = 0, -- set later
+			BorderSizePixel = 0,
+		})
+		corner(row, CORNER_R)
+		stroke(row, Theme.Stroke, STROKE_T)
+		return row
+	end
+
 	local Window = { Tabs = {}, _current = nil }
 
 	local BG = create("CanvasGroup", {
 		Name = "Window",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0.1, 0),
-		Size = UDim2.fromOffset(532, 410),
+		Size = UDim2.fromOffset(WIN_W, WIN_H),
 		BackgroundColor3 = Theme.Background,
 		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
 		Parent = ScreenGui,
 	})
-	corner(BG, 6)
+	corner(BG, CORNER_R)
 	stroke(BG, Theme.Stroke, 0.5)
-	addShadow(BG, 20, 0.5)
+	addShadow(BG, 20 * scale, 0.5)
 
 	-- Top bar
 	local TopBar = create("Frame", {
 		Name = "TopBar",
 		BackgroundColor3 = Theme.Secondary,
 		BackgroundTransparency = 0.05,
-		Size = UDim2.new(1, 0, 0, 45),
+		Size = UDim2.new(1, 0, 0, TOP_H),
 		BorderSizePixel = 0,
 		ZIndex = 5,
 		Parent = BG,
 	})
 	stroke(TopBar, Theme.Stroke, STROKE_T)
-	addShadow(TopBar, 10, 0.86)
+	addShadow(TopBar, 10 * scale, 0.86)
 
 	create("TextLabel", {
 		Name = "Title", Text = cfg.Title or "Lib Name",
-		FontFace = FONT_TITLE, TextColor3 = Theme.Text, TextSize = 16,
+		FontFace = FONT_TITLE, TextColor3 = Theme.Text, TextSize = FONT_TITLE_SZ,
 		TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
 		BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 16, 0.5, 0), Size = UDim2.new(0, 300, 0, 22),
+		Position = UDim2.new(0, 16 * scale, 0.5, 0), Size = UDim2.new(0, 300 * scale, 0, 22 * scale),
 		Parent = TopBar,
 	})
 
@@ -323,11 +355,11 @@ function Library:CreateWindow(cfg)
 		local b = create("TextButton", {
 			Text = "", AutoButtonColor = false, BackgroundColor3 = Theme.Element,
 			BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, offsetX, 0.5, 0), Size = UDim2.fromOffset(26, 26),
+			Position = UDim2.new(1, offsetX * scale, 0.5, 0), Size = UDim2.fromOffset(26 * scale, 26 * scale),
 			Parent = TopBar,
 		})
-		corner(b, 6)
-		local ic = icon(iconName, 16, false, Theme.SubText)
+		corner(b, CORNER_R)
+		local ic = icon(iconName, 16 * scale, false, Theme.SubText)
 		ic.AnchorPoint = Vector2.new(0.5, 0.5)
 		ic.Position = UDim2.new(0.5, 0, 0.5, 0)
 		ic.Parent = b
@@ -342,10 +374,10 @@ function Library:CreateWindow(cfg)
 		return b
 	end
 
-	local CloseBtn = ctrlBtn("x", -10, Color3.fromRGB(255, 90, 90))
-	local MinBtn   = ctrlBtn("minus", -42, Theme.Text)
-	local YtBtn    = ctrlBtn("youtube", -74, Color3.fromRGB(255, 60, 60))
-	local DcBtn    = ctrlBtn("discord", -106, Color3.fromRGB(88, 101, 242))
+	local CloseBtn = ctrlBtn("x", -10 * scale, Color3.fromRGB(255, 90, 90))
+	local MinBtn   = ctrlBtn("minus", -42 * scale, Theme.Text)
+	local YtBtn    = ctrlBtn("youtube", -74 * scale, Color3.fromRGB(255, 60, 60))
+	local DcBtn    = ctrlBtn("discord", -106 * scale, Color3.fromRGB(88, 101, 242))
 
 	local YT_LINK = "https://youtube.com/@Qanuir"
 	local DC_LINK = "https://discord.gg/Qanuir"
@@ -374,33 +406,37 @@ function Library:CreateWindow(cfg)
 	-- Body
 	local Body = create("Frame", {
 		Name = "Body", BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 45), Size = UDim2.new(1, 0, 1, -45),
+		Position = UDim2.new(0, 0, 0, TOP_H), Size = UDim2.new(1, 0, 1, -TOP_H),
 		Parent = BG,
 	})
 
 	-- Tab list (left)
 	local TabList = create("ScrollingFrame", {
 		Name = "TabList", BackgroundColor3 = Theme.Secondary, BackgroundTransparency = 0.2,
-		BorderSizePixel = 0, Size = UDim2.new(0, 140, 1, 0),
+		BorderSizePixel = 0, Size = UDim2.new(0, SIDE_W, 1, 0),
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Stroke, ScrollBarImageTransparency = 0.5,
+		ScrollBarThickness = 3 * scale, ScrollBarImageColor3 = Theme.Stroke, ScrollBarImageTransparency = 0.5,
 		Parent = Body,
 	}, {
-		create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }),
-		create("UIPadding", { PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }),
+		create("UIListLayout", { Padding = UDim.new(0, 4 * scale), SortOrder = Enum.SortOrder.LayoutOrder }),
+		create("UIPadding", {
+			PaddingTop = UDim.new(0, PAD_SMALL),
+			PaddingLeft = UDim.new(0, PAD_SMALL),
+			PaddingRight = UDim.new(0, PAD_SMALL),
+		}),
 	})
 
 	-- Content (right)
 	local Content = create("Frame", {
 		Name = "Content", BackgroundTransparency = 1,
-		Position = UDim2.new(0, 141, 0, 0), Size = UDim2.new(1, -141, 1, 0),
+		Position = UDim2.new(0, SIDE_W + 1 * scale, 0, 0), Size = UDim2.new(1, -(SIDE_W + 1 * scale), 1, 0),
 		Parent = Body,
 	})
 
 	-- Divider between sidebar and content
 	create("Frame", {
 		Name = "SideDivider", BackgroundColor3 = Theme.Stroke, BackgroundTransparency = STROKE_T,
-		BorderSizePixel = 0, Position = UDim2.new(0, 140, 0, 0), Size = UDim2.new(0, 1, 1, 0),
+		BorderSizePixel = 0, Position = UDim2.new(0, SIDE_W, 0, 0), Size = UDim2.new(0, 1 * scale, 1, 0),
 		ZIndex = 2, Parent = Body,
 	})
 
@@ -417,9 +453,9 @@ function Library:CreateWindow(cfg)
 		minimized = not minimized
 		if minimized then
 			Body.Visible = false
-			tween(BG, TI_S, { Size = UDim2.fromOffset(532, 45) })
+			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, TOP_H) })
 		else
-			tween(BG, TI_S, { Size = UDim2.fromOffset(532, 410) })
+			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, WIN_H) })
 			task.wait(0.12); Body.Visible = true
 		end
 	end)
@@ -443,22 +479,22 @@ function Library:CreateWindow(cfg)
 
 		local btn = create("TextButton", {
 			Text = "", AutoButtonColor = false, BackgroundColor3 = Theme.Element,
-			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34),
+			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, BTN_H),
 			Parent = TabList,
 		})
-		corner(btn, 6)
+		corner(btn, CORNER_R)
 
-		local ic = icon(tcfg.Icon or "circle", 18, false, Theme.SubText)
+		local ic = icon(tcfg.Icon or "circle", 18 * scale, false, Theme.SubText)
 		ic.AnchorPoint = Vector2.new(0, 0.5)
-		ic.Position = UDim2.new(0, 8, 0.5, 0)
+		ic.Position = UDim2.new(0, PAD_SMALL, 0.5, 0)
 		ic.Parent = btn
 
 		local nameLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Text = tcfg.Name or "Tab",
-			FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 14,
+			FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = FONT_MAIN_SZ,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 34, 0.5, 0),
-			Size = UDim2.new(1, -40, 1, 0), Parent = btn,
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 34 * scale, 0.5, 0),
+			Size = UDim2.new(1, -40 * scale, 1, 0), Parent = btn,
 		})
 
 		local pageWrap = create("CanvasGroup", {
@@ -469,14 +505,16 @@ function Library:CreateWindow(cfg)
 		local page = create("ScrollingFrame", {
 			BackgroundTransparency = 1, BorderSizePixel = 0,
 			Size = UDim2.new(1, 0, 1, 0), CanvasSize = UDim2.new(),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3 * scale,
 			ScrollBarImageColor3 = Theme.Stroke, ScrollBarImageTransparency = 0.5,
 			Parent = pageWrap,
 		}, {
-			create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+			create("UIListLayout", { Padding = UDim.new(0, PAD_SMALL), SortOrder = Enum.SortOrder.LayoutOrder }),
 			create("UIPadding", {
-				PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
-				PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+				PaddingTop = UDim.new(0, PAD_LARGE),
+				PaddingBottom = UDim.new(0, PAD_LARGE),
+				PaddingLeft = UDim.new(0, PAD_LARGE),
+				PaddingRight = UDim.new(0, PAD_LARGE),
 			}),
 		})
 
@@ -510,14 +548,14 @@ function Library:CreateWindow(cfg)
 		table.insert(Window.Tabs, Tab)
 		if #Window.Tabs == 1 then select() end
 
-		-- shared row factory
+		-- shared row factory (uses outer newRow)
 		local function newRow(height)
 			Tab._order += 1
 			local row = create("Frame", {
-				BackgroundColor3 = Theme.Element, Size = UDim2.new(1, 0, 0, height or 34),
+				BackgroundColor3 = Theme.Element, Size = UDim2.new(1, 0, 0, height or BTN_H),
 				LayoutOrder = Tab._order, BorderSizePixel = 0, Parent = page,
 			})
-			corner(row, 6)
+			corner(row, CORNER_R)
 			stroke(row, Theme.Stroke, STROKE_T)
 			return row
 		end
@@ -534,12 +572,12 @@ function Library:CreateWindow(cfg)
 			})
 			local lbl = create("TextLabel", {
 				BackgroundTransparency = 1, Text = text or "Label",
-				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 13,
+				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = FONT_SUB_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
-				AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, -8, 0, 0),
-				Position = UDim2.new(0, 4, 0, 0), Parent = row,
+				AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, -PAD_SMALL, 0, 0),
+				Position = UDim2.new(0, 4 * scale, 0, 0), Parent = row,
 			})
-			create("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = row })
+			create("UIPadding", { PaddingTop = UDim.new(0, 3 * scale), PaddingBottom = UDim.new(0, 3 * scale), Parent = row })
 			return { Set = function(_, t) lbl.Text = t end, Instance = row }
 		end
 
@@ -551,21 +589,23 @@ function Library:CreateWindow(cfg)
 			row.AutomaticSize = Enum.AutomaticSize.Y
 			row.BackgroundColor3 = Color3.fromRGB(40, 34, 20)
 			for _, s in row:GetChildren() do if s:IsA("UIStroke") then s.Color = Theme.Warning; s.Transparency = 0.5 end end
-			-- equal top/bottom padding => single-line text sits centered against the icon
 			create("UIPadding", {
-				PaddingTop = UDim.new(0, 9), PaddingBottom = UDim.new(0, 9),
-				PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = row,
+				PaddingTop = UDim.new(0, 9 * scale),
+				PaddingBottom = UDim.new(0, 9 * scale),
+				PaddingLeft = UDim.new(0, PAD_MED),
+				PaddingRight = UDim.new(0, PAD_MED),
+				Parent = row,
 			})
-			local ico = icon("triangle-exclamation", 18, false, Theme.Warning)
+			local ico = icon("triangle-exclamation", 18 * scale, false, Theme.Warning)
 			ico.AnchorPoint = Vector2.new(0, 0.5)
 			ico.Position = UDim2.new(0, 0, 0.5, 0)
 			ico.Parent = row
 			local lbl = create("TextLabel", {
 				BackgroundTransparency = 1, Text = text or "Warning",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Warning, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Warning, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 				TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y,
-				Size = UDim2.new(1, -28, 0, 0), Position = UDim2.new(0, 28, 0, 0), Parent = row,
+				Size = UDim2.new(1, -28 * scale, 0, 0), Position = UDim2.new(0, 28 * scale, 0, 0), Parent = row,
 			})
 			return { Set = function(_, t) lbl.Text = t end, Instance = row }
 		end
@@ -578,12 +618,12 @@ function Library:CreateWindow(cfg)
 			Tab._order += 1
 			local btnEl = create("TextButton", {
 				Text = "", AutoButtonColor = false, BackgroundColor3 = Theme.Element,
-				Size = UDim2.new(1, 0, 0, 36), LayoutOrder = Tab._order, BorderSizePixel = 0, Parent = page,
+				Size = UDim2.new(1, 0, 0, BTN_H + 2 * scale), LayoutOrder = Tab._order, BorderSizePixel = 0, Parent = page,
 			})
-			corner(btnEl, 6); stroke(btnEl, Theme.Stroke, STROKE_T)
+			corner(btnEl, CORNER_R); stroke(btnEl, Theme.Stroke, STROKE_T)
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = bcfg.Name or "Button",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
 				Size = UDim2.new(1, 0, 1, 0), Parent = btnEl,
 			})
 			btnEl.MouseEnter:Connect(function() tween(btnEl, TI, { BackgroundColor3 = Theme.ElementHover }) end)
@@ -602,32 +642,32 @@ function Library:CreateWindow(cfg)
 		function Tab:CreateToggle(tocfg)
 			tocfg = tocfg or {}
 			local state = tocfg.Default or false
-			local row = newRow(36)
+			local row = newRow(BTN_H + 2 * scale)
 			local btnEl = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = row })
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = tocfg.Name or "Toggle",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.new(1, -70, 1, 0), Parent = btnEl,
+				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(1, -70 * scale, 1, 0), Parent = btnEl,
 			})
 			local track = create("Frame", {
 				BackgroundColor3 = state and Theme.Accent or Theme.Off,
-				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0),
-				Size = UDim2.fromOffset(40, 20), BorderSizePixel = 0, Parent = btnEl,
+				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -PAD_MED, 0.5, 0),
+				Size = UDim2.fromOffset(40 * scale, 20 * scale), BorderSizePixel = 0, Parent = btnEl,
 			})
-			corner(track, 10)
+			corner(track, 10 * scale)
 			local knob = create("Frame", {
 				BackgroundColor3 = Theme.Text, AnchorPoint = Vector2.new(0, 0.5),
-				Position = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-				Size = UDim2.fromOffset(16, 16), BorderSizePixel = 0, Parent = track,
+				Position = state and UDim2.new(1, -18 * scale, 0.5, 0) or UDim2.new(0, 2 * scale, 0.5, 0),
+				Size = UDim2.fromOffset(16 * scale, 16 * scale), BorderSizePixel = 0, Parent = track,
 			})
-			corner(knob, 8)
+			corner(knob, 8 * scale)
 
 			local api = {}
 			function api:Set(v)
 				state = v
 				tween(track, TI, { BackgroundColor3 = state and Theme.Accent or Theme.Off })
-				tween(knob, TI, { Position = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0) })
+				tween(knob, TI, { Position = state and UDim2.new(1, -18 * scale, 0.5, 0) or UDim2.new(0, 2 * scale, 0.5, 0) })
 				if tocfg.Callback then task.spawn(tocfg.Callback, state) end
 			end
 			function api:Get() return state end
@@ -642,19 +682,19 @@ function Library:CreateWindow(cfg)
 		------------------------------------------------------------
 		function Tab:CreateStat(scfg)
 			scfg = scfg or {}
-			local row = newRow(34)
+			local row = newRow(BTN_H)
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = scfg.Name or "Stat",
-				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.new(0.5, -10, 1, 0), Parent = row,
+				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(0.5, -PAD_MED, 1, 0), Parent = row,
 			})
 			local valLbl = create("TextLabel", {
 				BackgroundTransparency = 1, Text = tostring(scfg.Value or "-"),
-				FontFace = FONT_TITLE, TextColor3 = Theme.Accent, TextSize = 14,
+				FontFace = FONT_TITLE, TextColor3 = Theme.Accent, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd,
-				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0),
-				Size = UDim2.new(0.5, -10, 1, 0), Parent = row,
+				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -PAD_MED, 0.5, 0),
+				Size = UDim2.new(0.5, -PAD_MED, 1, 0), Parent = row,
 			})
 			return { Set = function(_, v) valLbl.Text = tostring(v) end, Instance = row }
 		end
@@ -667,37 +707,37 @@ function Library:CreateWindow(cfg)
 			local min, max = slcfg.Min or 0, slcfg.Max or 100
 			local inc = slcfg.Increment or 1
 			local value = math.clamp(slcfg.Default or min, min, max)
-			local row = newRow(50)
+			local row = newRow(50 * scale)
 
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = slcfg.Name or "Slider",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
-				TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 10, 0, 6),
-				Size = UDim2.new(1, -70, 0, 16), Parent = row,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
+				TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, PAD_MED, 0, 6 * scale),
+				Size = UDim2.new(1, -70 * scale, 0, 16 * scale), Parent = row,
 			})
 			local valLbl = create("TextLabel", {
 				BackgroundTransparency = 1, Text = tostring(value),
-				FontFace = FONT_TITLE, TextColor3 = Theme.Accent, TextSize = 14,
+				FontFace = FONT_TITLE, TextColor3 = Theme.Accent, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0),
-				Position = UDim2.new(1, -10, 0, 6), Size = UDim2.new(0, 60, 0, 16), Parent = row,
+				Position = UDim2.new(1, -PAD_MED, 0, 6 * scale), Size = UDim2.new(0, 60 * scale, 0, 16 * scale), Parent = row,
 			})
 			local track = create("Frame", {
 				BackgroundColor3 = Theme.Off, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 1, -14), Size = UDim2.new(1, -20, 0, 6),
+				Position = UDim2.new(0, PAD_MED, 1, -14 * scale), Size = UDim2.new(1, -20 * scale, 0, 6 * scale),
 				BorderSizePixel = 0, Parent = row,
 			})
-			corner(track, 3)
+			corner(track, 3 * scale)
 			local fill = create("Frame", {
 				BackgroundColor3 = Theme.Accent, Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
 				BorderSizePixel = 0, Parent = track,
 			})
-			corner(fill, 3)
+			corner(fill, 3 * scale)
 			local knob = create("Frame", {
 				BackgroundColor3 = Theme.Text, AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0),
-				Size = UDim2.fromOffset(14, 14), BorderSizePixel = 0, ZIndex = 2, Parent = track,
+				Size = UDim2.fromOffset(14 * scale, 14 * scale), BorderSizePixel = 0, ZIndex = 2, Parent = track,
 			})
-			corner(knob, 7)
+			corner(knob, 7 * scale)
 
 			local api = {}
 			local function apply(alpha, fire)
@@ -721,34 +761,33 @@ function Library:CreateWindow(cfg)
 		------------------------------------------------------------
 		function Tab:CreateTextbox(txcfg)
 			txcfg = txcfg or {}
-			local row = newRow(36)
+			local row = newRow(BTN_H + 2 * scale)
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = txcfg.Name or "Textbox",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.new(0.4, -10, 1, 0), Parent = row,
+				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(0.4, -PAD_MED, 1, 0), Parent = row,
 			})
-			-- wrapper hugs the textbox; textbox grows with text but is clamped so it can't overlap the label
 			local boxWrap = create("Frame", {
 				BackgroundColor3 = Theme.Secondary, AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.new(0, 0, 0, 24),
+				Position = UDim2.new(1, -PAD_SMALL, 0.5, 0), Size = UDim2.new(0, 0, 0, 24 * scale),
 				AutomaticSize = Enum.AutomaticSize.X, ClipsDescendants = true,
 				BorderSizePixel = 0, Parent = row,
 			}, {
-				create("UIPadding", { PaddingLeft = UDim.new(0, 7), PaddingRight = UDim.new(0, 7) }),
+				create("UIPadding", { PaddingLeft = UDim.new(0, 7 * scale), PaddingRight = UDim.new(0, 7 * scale) }),
 			})
-			corner(boxWrap, 5)
+			corner(boxWrap, 5 * scale)
 			local tbStroke = stroke(boxWrap, Theme.Stroke, STROKE_T)
 			local tb = create("TextBox", {
 				BackgroundTransparency = 1, Text = txcfg.Default or "",
 				PlaceholderText = txcfg.Placeholder or "...", PlaceholderColor3 = Theme.SubText,
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 13,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_SUB_SZ,
 				ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left,
 				AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0), Parent = boxWrap,
 			}, {
 				create("UISizeConstraint", {
-					MinSize = Vector2.new(txcfg.MinWidth or 56, 0),
-					MaxSize = Vector2.new(txcfg.MaxWidth or 180, math.huge),
+					MinSize = Vector2.new((txcfg.MinWidth or 56) * scale, 0),
+					MaxSize = Vector2.new((txcfg.MaxWidth or 180) * scale, math.huge),
 				}),
 			})
 			tb.Focused:Connect(function() tween(tbStroke, TI, { Color = Theme.Accent, Transparency = 0.2 }) end)
@@ -771,55 +810,60 @@ function Library:CreateWindow(cfg)
 			local color = ccfg.Default or Color3.fromRGB(255, 0, 0)
 			local h, s, v = color:ToHSV()
 
-			local row = newRow(36)
+			local row = newRow(BTN_H + 2 * scale)
 			row.ClipsDescendants = true
-			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), Parent = row })
+			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, BTN_H + 2 * scale), Parent = row })
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = ccfg.Name or "Color",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.new(1, -60, 1, 0), Parent = header,
+				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(1, -60 * scale, 1, 0), Parent = header,
 			})
 			local swatch = create("Frame", {
 				BackgroundColor3 = color, AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(34, 18),
+				Position = UDim2.new(1, -PAD_MED, 0.5, 0), Size = UDim2.fromOffset(34 * scale, 18 * scale),
 				BorderSizePixel = 0, Parent = header,
 			})
-			corner(swatch, 4); stroke(swatch, Theme.Stroke, 0.4)
+			corner(swatch, 4 * scale); stroke(swatch, Theme.Stroke, 0.4)
 
 			local body = create("Frame", {
-				BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 36),
-				Size = UDim2.new(1, 0, 0, 130), Visible = false, Parent = row,
+				BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, BTN_H + 2 * scale),
+				Size = UDim2.new(1, 0, 0, 130 * scale), Visible = false, Parent = row,
 			})
-			create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), Parent = body })
+			create("UIPadding", {
+				PaddingLeft = UDim.new(0, PAD_MED),
+				PaddingRight = UDim.new(0, PAD_MED),
+				PaddingBottom = UDim.new(0, PAD_MED),
+				Parent = body,
+			})
 
 			-- SV square
 			local sv = create("Frame", {
-				BackgroundColor3 = Color3.fromHSV(h, 1, 1), Size = UDim2.new(1, -34, 1, 0),
+				BackgroundColor3 = Color3.fromHSV(h, 1, 1), Size = UDim2.new(1, -34 * scale, 1, 0),
 				BorderSizePixel = 0, Parent = body,
 			})
-			corner(sv, 4)
+			corner(sv, 4 * scale)
 			create("Frame", { BackgroundColor3 = Color3.new(1,1,1), Size = UDim2.new(1,0,1,0), BorderSizePixel = 0, Parent = sv }, {
 				create("UIGradient", { Color = ColorSequence.new(Color3.new(1,1,1)), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(1,1) }) }),
-				create("UICorner", { CornerRadius = UDim.new(0,4) }),
+				create("UICorner", { CornerRadius = UDim.new(0, 4 * scale) }),
 			})
 			create("Frame", { BackgroundColor3 = Color3.new(0,0,0), Size = UDim2.new(1,0,1,0), BorderSizePixel = 0, Parent = sv }, {
 				create("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(0,0,0)), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0,1), NumberSequenceKeypoint.new(1,0) }) }),
-				create("UICorner", { CornerRadius = UDim.new(0,4) }),
+				create("UICorner", { CornerRadius = UDim.new(0, 4 * scale) }),
 			})
 			local svCursor = create("Frame", {
 				BackgroundColor3 = Color3.new(1,1,1), AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(s, 0, 1 - v, 0), Size = UDim2.fromOffset(8, 8),
+				Position = UDim2.new(s, 0, 1 - v, 0), Size = UDim2.fromOffset(8 * scale, 8 * scale),
 				BorderSizePixel = 0, ZIndex = 5, Parent = sv,
 			})
-			corner(svCursor, 4); stroke(svCursor, Color3.new(0,0,0), 0.2)
+			corner(svCursor, 4 * scale); stroke(svCursor, Color3.new(0,0,0), 0.2)
 
 			-- Hue bar
 			local hue = create("Frame", {
 				AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0),
-				Size = UDim2.new(0, 22, 1, 0), BorderSizePixel = 0, Parent = body,
+				Size = UDim2.new(0, 22 * scale, 1, 0), BorderSizePixel = 0, Parent = body,
 			})
-			corner(hue, 4)
+			corner(hue, 4 * scale)
 			create("UIGradient", {
 				Rotation = 90,
 				Color = ColorSequence.new({
@@ -835,10 +879,10 @@ function Library:CreateWindow(cfg)
 			})
 			local hueCursor = create("Frame", {
 				BackgroundColor3 = Color3.new(1,1,1), AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(0.5, 0, h, 0), Size = UDim2.new(1, 4, 0, 4),
+				Position = UDim2.new(0.5, 0, h, 0), Size = UDim2.new(1, 4 * scale, 0, 4 * scale),
 				BorderSizePixel = 0, ZIndex = 5, Parent = hue,
 			})
-			corner(hueCursor, 2); stroke(hueCursor, Color3.new(0,0,0), 0.2)
+			corner(hueCursor, 2 * scale); stroke(hueCursor, Color3.new(0,0,0), 0.2)
 
 			local function refresh(fire)
 				color = Color3.fromHSV(h, s, v)
@@ -855,7 +899,7 @@ function Library:CreateWindow(cfg)
 			header.Activated:Connect(function()
 				open = not open
 				if open then body.Visible = true end
-				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and 172 or 36) })
+				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and (BTN_H + 2 * scale + 130 * scale) or (BTN_H + 2 * scale)) })
 				if not open then task.delay(0.12, function() if not open then body.Visible = false end end) end
 			end)
 
@@ -880,34 +924,38 @@ function Library:CreateWindow(cfg)
 				else selected[dcfg.Default] = true end
 			end
 
-			local row = newRow(36)
+			local row = newRow(BTN_H + 2 * scale)
 			row.ClipsDescendants = true
-			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), Parent = row })
+			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, BTN_H + 2 * scale), Parent = row })
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = dcfg.Name or "Dropdown",
-				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 14,
+				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
 				TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.new(0.5, 0, 1, 0), Parent = header,
+				Position = UDim2.new(0, PAD_MED, 0.5, 0), Size = UDim2.new(0.5, 0, 1, 0), Parent = header,
 			})
 			local valLbl = create("TextLabel", {
 				BackgroundTransparency = 1, Text = "",
-				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 13,
+				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = FONT_SUB_SZ,
 				TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd,
-				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -32, 0.5, 0),
-				Size = UDim2.new(0.5, -8, 1, 0), Parent = header,
+				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -32 * scale, 0.5, 0),
+				Size = UDim2.new(0.5, -8 * scale, 1, 0), Parent = header,
 			})
-			local chev = icon("chevron-down", 16, false, Theme.SubText)
+			local chev = icon("chevron-down", 16 * scale, false, Theme.SubText)
 			chev.AnchorPoint = Vector2.new(1, 0.5)
-			chev.Position = UDim2.new(1, -10, 0.5, 0)
+			chev.Position = UDim2.new(1, -PAD_MED, 0.5, 0)
 			chev.Parent = header
 
 			local list = create("Frame", {
-				BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 36),
+				BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, BTN_H + 2 * scale),
 				Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
 				Visible = false, Parent = row,
 			}, {
-				create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }),
-				create("UIPadding", { PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0,8), PaddingBottom = UDim.new(0,8) }),
+				create("UIListLayout", { Padding = UDim.new(0, 2 * scale), SortOrder = Enum.SortOrder.LayoutOrder }),
+				create("UIPadding", {
+					PaddingLeft = UDim.new(0, PAD_SMALL),
+					PaddingRight = UDim.new(0, PAD_SMALL),
+					PaddingBottom = UDim.new(0, PAD_SMALL),
+				}),
 			})
 
 			local function updateValLabel()
@@ -925,18 +973,18 @@ function Library:CreateWindow(cfg)
 				for i, opt in options do
 					local ob = create("TextButton", {
 						Text = "", AutoButtonColor = false, BackgroundColor3 = Theme.Secondary,
-						Size = UDim2.new(1, 0, 0, 28), LayoutOrder = i, BorderSizePixel = 0, Parent = list,
+						Size = UDim2.new(1, 0, 0, 28 * scale), LayoutOrder = i, BorderSizePixel = 0, Parent = list,
 					})
-					corner(ob, 5)
+					corner(ob, 5 * scale)
 					local txt = create("TextLabel", {
 						BackgroundTransparency = 1, Text = opt, FontFace = FONT_MAIN,
-						TextColor3 = selected[opt] and Theme.Accent or Theme.SubText, TextSize = 13,
-						TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 8, 0, 0),
-						Size = UDim2.new(1, -30, 1, 0), Parent = ob,
+						TextColor3 = selected[opt] and Theme.Accent or Theme.SubText, TextSize = FONT_SUB_SZ,
+						TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, PAD_SMALL, 0, 0),
+						Size = UDim2.new(1, -30 * scale, 1, 0), Parent = ob,
 					})
-					local check = icon("check", 14, false, Theme.Accent)
+					local check = icon("check", 14 * scale, false, Theme.Accent)
 					check.AnchorPoint = Vector2.new(1, 0.5)
-					check.Position = UDim2.new(1, -8, 0.5, 0)
+					check.Position = UDim2.new(1, -PAD_SMALL, 0.5, 0)
 					check.Visible = selected[opt] == true
 					check.Parent = ob
 
@@ -975,15 +1023,15 @@ function Library:CreateWindow(cfg)
 
 			local function openHeight()
 				local n = #options
-				if n == 0 then return 44 end
-				return 36 + (n * 28) + ((n - 1) * 2) + 8
+				if n == 0 then return 44 * scale end
+				return (BTN_H + 2 * scale) + (n * 28 * scale) + ((n - 1) * 2 * scale) + PAD_SMALL
 			end
 
 			local open = false
 			function api._toggle(force)
 				if force ~= nil then open = force else open = not open end
 				if open then list.Visible = true end
-				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and openHeight() or 36) })
+				tween(row, TI_S, { Size = UDim2.new(1, 0, 0, open and openHeight() or (BTN_H + 2 * scale)) })
 				tween(chev, TI, { Rotation = open and 180 or 0 })
 				if not open then task.delay(0.12, function() if not open then list.Visible = false end end) end
 			end
