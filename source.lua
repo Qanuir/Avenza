@@ -8,7 +8,7 @@ local setClipboard = setclipboard or toclipboard or writeclipboard or write_clip
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
 ----------------------------------------------------------------------
--- Singleton guard (no duplicate execution)
+-- Singleton guard 
 ----------------------------------------------------------------------
 local ENV = (getgenv and getgenv()) or shared or _G
 local REG_KEY = "__VaehzUI_Instance"
@@ -22,7 +22,7 @@ do
 end
 
 ----------------------------------------------------------------------
--- Theme  (visionOS-inspired frosted glass)
+-- Theme  
 ----------------------------------------------------------------------
 local Theme = {
 	Background = Color3.fromRGB(18, 18, 22),
@@ -51,7 +51,7 @@ local TI    = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Ou
 local TI_S  = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
 ----------------------------------------------------------------------
--- Connection tracking (for proper destroy)
+-- Connection tracking 
 ----------------------------------------------------------------------
 local Connections = {}
 
@@ -181,22 +181,6 @@ local function copyToClipboard(str)
 	return pcall(setClipboard, str)
 end
 
-local function openDiscordInvite(code)
-	if not httpRequest then return false end
-	return pcall(function()
-		httpRequest({
-			Url = "http://127.0.0.1:6463/rpc?v=1",
-			Method = "POST",
-			Headers = { ["Content-Type"] = "application/json", Origin = "https://discord.com" },
-			Body = HttpService:JSONEncode({
-				cmd = "INVITE_BROWSER",
-				nonce = HttpService:GenerateGUID(false),
-				args = { code = code },
-			}),
-		})
-	end)
-end
-
 ----------------------------------------------------------------------
 -- Library root
 ----------------------------------------------------------------------
@@ -212,7 +196,7 @@ do
 end
 
 local ScreenGui = create("ScreenGui", {
-	Name = "VaehzUI",
+	Name = "AvenzaUI",
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true,
@@ -439,33 +423,8 @@ function Library:CreateWindow(cfg)
 		return b
 	end
 
+	-- Only the minimize button remains
 	local MinBtn = ctrlBtn("minus", -14, Theme.Text)
-	local YtBtn  = ctrlBtn("youtube", -52, Color3.fromRGB(255, 80, 80))
-	local DcBtn  = ctrlBtn("discord", -90, Color3.fromRGB(114, 137, 248))
-
-	local YT_LINK = "https://youtube.com/@Qanuir"
-	local DC_LINK = "https://discord.gg/Qanuir"
-	local DC_CODE = "Qanuir"
-
-	YtBtn.Activated:Connect(function()
-		local copied = copyToClipboard(YT_LINK)
-		Library:Notify({
-			Title = "YouTube",
-			Content = copied and "Channel link copied to clipboard" or "Clipboard unavailable: " .. YT_LINK,
-			Duration = 3,
-		})
-	end)
-
-	DcBtn.Activated:Connect(function()
-		local copied = copyToClipboard(DC_LINK)
-		local opened = openDiscordInvite(DC_CODE)
-		local msg
-		if opened and copied then msg = "Opening invite - link also copied"
-		elseif opened then msg = "Opening invite in Discord"
-		elseif copied then msg = "Invite link copied to clipboard"
-		else msg = "Clipboard unavailable: " .. DC_LINK end
-		Library:Notify({ Title = "Discord", Content = msg, Duration = 3 })
-	end)
 
 	------------------------------------------------------------
 	-- Icon rail (left, full height) + power button
@@ -513,7 +472,7 @@ function Library:CreateWindow(cfg)
 		Parent = Rail,
 	})
 	corner(PowerBtn, 14 * scale)
-	local powerIc = icon("power-off", 17 * scale, false, Theme.SubText)
+	local powerIc = icon("frame-collapsed", 17 * scale, false, Theme.SubText)
 	powerIc.AnchorPoint = Vector2.new(0.5, 0.5)
 	powerIc.Position = UDim2.new(0.5, 0, 0.5, 0)
 	powerIc.Parent = PowerBtn
