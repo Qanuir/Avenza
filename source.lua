@@ -114,45 +114,6 @@ local function ripple(host, color)
 	task.delay(0.5, function() if r.Parent then r:Destroy() end end)
 end
 
-local SHADOW_IMG = "rbxassetid://6014261993"
-
--- drop shadow: sibling rendered directly behind `parent`, kept in sync
--- through tweens, drags, minimizes and hide/show (UIShadow is not creatable)
-local function addShadow(parent, blur, trans)
-	local holder = parent and parent.Parent
-	if not holder then return nil end
-	local pad = math.ceil(blur or 16)
-	local shadow = create("ImageLabel", {
-		Name = "_shadow",
-		BackgroundTransparency = 1,
-		Image = SHADOW_IMG,
-		ImageColor3 = Color3.new(0, 0, 0),
-		ImageTransparency = trans or 0.5,
-		ScaleType = Enum.ScaleType.Slice,
-		SliceCenter = Rect.new(49, 49, 450, 450),
-		ZIndex = math.max((parent.ZIndex or 1) - 1, 0),
-		Parent = holder,
-	})
-	local function sync()
-		if not parent.Parent then return end
-		local gtr = 0
-		pcall(function() gtr = parent.GroupTransparency or 0 end)
-		shadow.AnchorPoint = parent.AnchorPoint
-		shadow.Position = UDim2.new(parent.Position.X.Scale, parent.Position.X.Offset, parent.Position.Y.Scale, parent.Position.Y.Offset + 2)
-		shadow.Size = UDim2.new(parent.Size.X.Scale, parent.Size.X.Offset + pad * 2, parent.Size.Y.Scale, parent.Size.Y.Offset + pad * 2)
-		shadow.Visible = parent.Visible and gtr < 1
-	end
-	track(parent:GetPropertyChangedSignal("Position"):Connect(sync))
-	track(parent:GetPropertyChangedSignal("Size"):Connect(sync))
-	track(parent:GetPropertyChangedSignal("Visible"):Connect(sync))
-	pcall(function() track(parent:GetPropertyChangedSignal("GroupTransparency"):Connect(sync)) end)
-	track(parent.AncestryChanged:Connect(function(_, p)
-		if not p and shadow.Parent then shadow:Destroy() end
-	end))
-	sync()
-	return shadow
-end
-
 -- icons: BuilderIcons glyphs, rbxassetid images, with a hard fallback if the font fails
 local function icon(name, size, filled, color)
 	if type(name) == "string" and (name:match("^rbxassetid://") or name:match("^%d+$")) then
@@ -191,7 +152,6 @@ local function makeDraggable(frame, handle)
 		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			startPos = inp.Position
-			-- always snapshot the current pixel offset (AnchorPoint = 0,0)
 			startFramePos = frame.Position
 			inp.Changed:Connect(function()
 				if inp.UserInputState == Enum.UserInputState.End then dragging = false end
@@ -205,12 +165,11 @@ local function makeDraggable(frame, handle)
 	end))
 	track(UserInputService.InputChanged:Connect(function(inp)
 		if inp == dragInput and dragging then
-			local delta  = inp.Position - startPos
-			local vp     = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
-			local sz     = frame.AbsoluteSize
-			local newX   = math.clamp(startFramePos.X.Offset + delta.X, 0, vp.X - sz.X)
-			local newY   = math.clamp(startFramePos.Y.Offset + delta.Y, 0, vp.Y - sz.Y)
-			frame.Position = UDim2.fromOffset(newX, newY)
+			local delta = inp.Position - startPos
+			frame.Position = UDim2.new(
+				startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
+				startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
+			)
 		end
 	end))
 end
@@ -317,23 +276,18 @@ end
 -- register as the active singleton instance
 ENV[REG_KEY] = Library
 
--- Detect mobile early (before CreateWindow) for the notification holder
-local _isMobileEarly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-
 local NotifHolder = create("Frame", {
 	Name = "Notifications",
 	BackgroundTransparency = 1,
-	-- Mobile: top-centre so notifs don't hide behind the window at the bottom
-	-- PC: bottom-right corner (classic)
-	AnchorPoint = _isMobileEarly and Vector2.new(0.5, 0) or Vector2.new(1, 1),
-	Position    = _isMobileEarly and UDim2.new(0.5, 0, 0, 8) or UDim2.new(1, -16, 1, -16),
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -16, 1, -16),
 	Size = UDim2.new(0, 260, 1, -32),
 	Parent = ScreenGui,
 }, {
 	create("UIListLayout", {
 		Padding = UDim.new(0, 8),
-		HorizontalAlignment = _isMobileEarly and Enum.HorizontalAlignment.Center or Enum.HorizontalAlignment.Right,
-		VerticalAlignment   = _isMobileEarly and Enum.VerticalAlignment.Top       or Enum.VerticalAlignment.Bottom,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Bottom,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}),
 })
@@ -392,8 +346,6 @@ do
 	end))
 
 	function Tooltip.Attach(obj, text)
-		-- Tooltips are cursor-based; skip entirely on touch-only devices
-		if _isMobileEarly then return end
 		if type(text) ~= "string" or text == "" then return end
 		track(obj.MouseEnter:Connect(function()
 			hoverObj = obj
@@ -493,31 +445,13 @@ function Library:CreateWindow(cfg)
 	cfg = cfg or {}
 	if cfg.Accent then Theme.Accent = cfg.Accent end
 
-	-- ── Auto-detect mobile vs PC ────────────────────────────────────────────
-	local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-	local vp       = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
-	                  or Vector2.new(1920, 1080)
+	local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
 	local vpW, vpH = vp.X, vp.Y
 
-	-- Base window dimensions (designed for 1920-wide desktop)
+	-- Base window dimensions
 	local BASE_W, BASE_H = 580, 400
-
-	local scale
-	if cfg.Scale then
-		scale = cfg.Scale
-	elseif isMobile then
-		-- On mobile: fill 94% of the narrower viewport axis, keeping aspect ratio
-		local fitScale = math.min(vpW, vpH) * 0.94 / BASE_W
-		scale = math.clamp(fitScale, 0.45, 1.1)
-	else
-		-- PC: scale so the window never overflows the screen, but never shrinks below 0.6
-		local fitScale = math.min(vpW / (BASE_W + 40), vpH / (BASE_H + 80))
-		scale = math.clamp(fitScale, 0.6, 1.4)
-	end
-
-	Library._scale  = scale
-	Library._mobile = isMobile
-	NotifHolder.Size = UDim2.new(0, 260 * scale, 1, -32)
+	local scale = cfg.Scale or 0.8
+	Library._scale = scale
 
 	local WIN_W = BASE_W * scale
 	local WIN_H = BASE_H * scale
@@ -535,10 +469,9 @@ function Library:CreateWindow(cfg)
 
 	local Window = { Tabs = {}, _current = nil }
 
-	-- ── Starting position: centred horizontally, near top ───────────────────
-	-- Clamp so the window starts fully on-screen regardless of scale
-	local startX = math.clamp(vpW  * 0.5 - WIN_W * 0.5, 0, vpW  - WIN_W)
-	local startY = math.clamp(vpH  * 0.12,              0, vpH  - WIN_H)
+	-- Starting position: centred
+	local startX = vpW * 0.5 - WIN_W * 0.5
+	local startY = vpH * 0.12
 
 	local BG = create("CanvasGroup", {
 		Name = "Window",
@@ -548,13 +481,12 @@ function Library:CreateWindow(cfg)
 		BackgroundColor3 = Theme.Background,
 		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
-		Active = true, -- absorb clicks so they never fall through to the game
+		Active = true,
 		GroupTransparency = 1,
 		Parent = ScreenGui,
 	})
 	corner(BG, WIN_R)
 	stroke(BG, Theme.Stroke, 0.78)
-	addShadow(BG, 28 * scale, 0.55)
 
 	local winScale = create("UIScale", { Scale = 0.96, Parent = BG })
 	tween(BG, TI_S, { GroupTransparency = 0 })
@@ -573,12 +505,10 @@ function Library:CreateWindow(cfg)
 		Parent = BG,
 	})
 
-	-- On mobile the buttons are bigger and spaced more so fingers don't mis-tap
-	local CTRL_SZ  = isMobile and math.max(40 * scale, 36) or 32 * scale
-	local CTRL_GAP = isMobile and math.max(CTRL_SZ + 6, 46) or (CTRL_SZ + 6)
+	local CTRL_SZ = 32 * scale
+	local CTRL_GAP = CTRL_SZ + 6
 
-	-- Reserve enough room for the 3 control buttons + margins
-	local ctrlReserve = CTRL_GAP * 3 + (isMobile and 8 or 10) * scale
+	local ctrlReserve = CTRL_GAP * 3 + 10 * scale
 
 	local titleWrap = create("Frame", {
 		BackgroundTransparency = 1,
@@ -618,8 +548,7 @@ function Library:CreateWindow(cfg)
 	})
 
 	local function ctrlBtn(iconName, slotIndex, hoverColor)
-		-- slotIndex 1=close(min), 2=YT, 3=DC; anchored from the right
-		local offsetX = -(slotIndex - 1) * CTRL_GAP - CTRL_SZ * 0.5 - (isMobile and 4 or 6) * scale
+		local offsetX = -(slotIndex - 1) * CTRL_GAP - CTRL_SZ * 0.5 - 6 * scale
 		local b = create("TextButton", {
 			Text = "", AutoButtonColor = false, Selectable = true,
 			BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
@@ -632,18 +561,7 @@ function Library:CreateWindow(cfg)
 		local bScale = create("UIScale", { Scale = 1, Parent = b })
 		b.MouseButton1Down:Connect(function() tween(bScale, TI, { Scale = 0.8 }) end)
 		b.MouseButton1Up:Connect(function() tween(bScale, TI_S, { Scale = 1 }) end)
-		-- Touch press animation
-		b.InputBegan:Connect(function(inp)
-			if inp.UserInputType == Enum.UserInputType.Touch then
-				tween(bScale, TI, { Scale = 0.82 })
-			end
-		end)
-		b.InputEnded:Connect(function(inp)
-			if inp.UserInputType == Enum.UserInputType.Touch then
-				tween(bScale, TI_S, { Scale = 1 })
-			end
-		end)
-		local ic = icon(iconName, math.max(14 * scale, isMobile and 16 or 14), false, Theme.SubText)
+		local ic = icon(iconName, 14 * scale, false, Theme.SubText)
 		ic.AnchorPoint = Vector2.new(0.5, 0.5)
 		ic.Position = UDim2.new(0.5, 0, 0.5, 0)
 		ic.Parent = b
@@ -659,7 +577,7 @@ function Library:CreateWindow(cfg)
 		return b
 	end
 
-	local MinBtn = ctrlBtn("minus",   1, Theme.Text)
+	local MinBtn = ctrlBtn("minus", 1, Theme.Text)
 	local YtBtn  = ctrlBtn("youtube", 2, Color3.fromRGB(255, 80, 80))
 	local DcBtn  = ctrlBtn("discord", 3, Color3.fromRGB(114, 137, 248))
 	Tooltip.Attach(MinBtn, "Minimize")
@@ -728,7 +646,7 @@ function Library:CreateWindow(cfg)
 		ZIndex = 2, Parent = Rail,
 	})
 
-	local PWR_SZ = isMobile and math.max(46 * scale, 42) or 42 * scale
+	local PWR_SZ = 42 * scale
 	local PowerBtn = create("TextButton", {
 		Text = "", AutoButtonColor = false, Selectable = true,
 		BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
@@ -770,80 +688,12 @@ function Library:CreateWindow(cfg)
 	end)
 
 	------------------------------------------------------------
-	-- Resize grip (bottom-right)
-	------------------------------------------------------------
-	local fullSize = UDim2.fromOffset(WIN_W, WIN_H)
-	-- Max resize: whichever is smaller — a generous fixed cap, or the remaining viewport space
-	local function calcMaxWH()
-		local vp2 = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
-		local posX = BG.AbsolutePosition.X
-		local posY = BG.AbsolutePosition.Y
-		return math.min(WIN_W + 360 * scale, vp2.X - posX - 4),
-		       math.min(WIN_H + 300 * scale, vp2.Y - posY - 4)
-	end
-	local MAX_W, MAX_H = WIN_W + 360 * scale, WIN_H + 300 * scale
-	-- Resize grip: only useful on PC (touch-dragging a tiny corner is unusable on mobile)
-	local Grip = create("TextButton", {
-		Name = "ResizeGrip", Text = "", AutoButtonColor = false, Selectable = false,
-		BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -4 * scale, 1, -4 * scale),
-		Size = UDim2.fromOffset(isMobile and 0 or 20 * scale, isMobile and 0 or 20 * scale),
-		Visible = not isMobile,
-		ZIndex = 6, Parent = BG,
-	})
-	local function gripMark(len, dx, dy)
-		local l = create("Frame", {
-			BackgroundColor3 = Theme.SubText, BackgroundTransparency = 0.35,
-			BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, dx * scale, 0.5, dy * scale),
-			Size = UDim2.fromOffset(len * scale, math.max(1, math.floor(scale + 0.5))),
-			Rotation = -45, Parent = Grip,
-		})
-		corner(l, 1)
-	end
-	gripMark(6, 3, -3)
-	gripMark(11, -1, 1)
-	Grip.MouseEnter:Connect(function() tween(Grip, TI, { BackgroundTransparency = 0.9 }) end)
-	Grip.MouseLeave:Connect(function() tween(Grip, TI, { BackgroundTransparency = 1 }) end)
-	do
-		local resizing, rInput, rStart, rSize
-		track(Grip.InputBegan:Connect(function(inp)
-			if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-				resizing = true
-				rStart = inp.Position
-				rSize = BG.AbsoluteSize
-			end
-		end))
-		track(Grip.InputEnded:Connect(function(inp)
-			if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-				resizing = false
-			end
-		end))
-		track(Grip.InputChanged:Connect(function(inp)
-			if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
-				rInput = inp
-			end
-		end))
-		track(UserInputService.InputChanged:Connect(function(inp)
-			if inp == rInput and resizing then
-				local d = inp.Position - rStart
-				local mw, mh = calcMaxWH()
-				local w = math.floor(math.clamp(rSize.X + d.X, WIN_W, mw) + 0.5)
-				local h = math.floor(math.clamp(rSize.Y + d.Y, WIN_H, mh) + 0.5)
-				fullSize = UDim2.fromOffset(w, h)
-				BG.Size = fullSize
-			end
-		end))
-	end
-
-	------------------------------------------------------------
 	-- Minimize / restore
 	------------------------------------------------------------
 	local minimized = false
+	local fullSize = UDim2.fromOffset(WIN_W, WIN_H)
 	MinBtn.Activated:Connect(function()
 		minimized = not minimized
-		Grip.Visible = not minimized
 		if minimized then
 			Rail.Visible = false
 			Content.Visible = false
@@ -861,26 +711,14 @@ function Library:CreateWindow(cfg)
 	end)
 
 	------------------------------------------------------------
-	-- Hide / show (smooth, with optional Lighting blur)
+	-- Hide / show
 	------------------------------------------------------------
 	local hidden = false
-
-	local blurFx
-	if cfg.Blur ~= false then
-		pcall(function()
-			blurFx = create("BlurEffect", { Name = "VaehzBlur", Size = 0, Parent = game:GetService("Lighting") })
-			tween(blurFx, TI_S, { Size = 14 })
-			table.insert(Library._cleanups, function()
-				pcall(function() blurFx:Destroy() end)
-			end)
-		end)
-	end
 
 	local function setHidden(h)
 		if hidden == h then return end
 		hidden = h
 		if h then
-			if blurFx then tween(blurFx, TI, { Size = 0 }) end
 			tween(winScale, TI, { Scale = 0.97 })
 			tween(BG, TI, { GroupTransparency = 1 })
 			task.delay(0.18, function()
@@ -888,7 +726,6 @@ function Library:CreateWindow(cfg)
 			end)
 		else
 			BG.Visible = true
-			if blurFx then tween(blurFx, TI_S, { Size = 14 }) end
 			tween(winScale, TI_S, { Scale = 1 })
 			tween(BG, TI_S, { GroupTransparency = 0 })
 		end
@@ -911,7 +748,7 @@ function Library:CreateWindow(cfg)
 		tcfg = tcfg or {}
 		local Tab = { _order = 0 }
 
-		local TAB_BTN_SZ = isMobile and math.max(46 * scale, 42) or 42 * scale
+		local TAB_BTN_SZ = 42 * scale
 		local btn = create("TextButton", {
 			Text = "", AutoButtonColor = false, Selectable = true,
 			BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
@@ -1170,7 +1007,7 @@ function Library:CreateWindow(cfg)
 				Size = UDim2.fromOffset(20 * scale, 20 * scale), BorderSizePixel = 0, Parent = track_,
 			})
 			corner(knob, 10 * scale)
-			stroke(knob, Color3.new(0, 0, 0), 0.8) -- subtle definition instead of the dead UIShadow hack
+			stroke(knob, Color3.new(0, 0, 0), 0.8)
 
 			local enter, leave = rowHover(row, rowStroke)
 			btnEl.MouseEnter:Connect(enter)
@@ -1287,7 +1124,7 @@ function Library:CreateWindow(cfg)
 			stepBtn("-", -inc, 1)
 			stepBtn("+", inc, 3)
 
-			local TRACK_H = isMobile and math.max(10 * scale, 8) or 6 * scale
+			local TRACK_H = 6 * scale
 			local trackBar = create("Frame", {
 				BackgroundColor3 = Theme.Off, BackgroundTransparency = 0.85,
 				AnchorPoint = Vector2.new(0, 1),
@@ -1302,7 +1139,7 @@ function Library:CreateWindow(cfg)
 				BorderSizePixel = 0, Parent = trackBar,
 			})
 			corner(fill, 3 * scale)
-			local KNOB_SZ = isMobile and math.max(22 * scale, 20) or 16 * scale
+			local KNOB_SZ = 16 * scale
 			local knob = create("Frame", {
 				BackgroundColor3 = Theme.Text, AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0),
@@ -1529,8 +1366,7 @@ function Library:CreateWindow(cfg)
 
 			local api = {}
 			function api:Set(c) h, s, v = c:ToHSV(); refresh(true) end
-			function api:Get() return color end
-			api.Instance = row
+			function api:Get() return color end			api.Instance = row
 			return api
 		end
 
