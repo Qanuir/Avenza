@@ -1,4 +1,3 @@
-
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -514,7 +513,7 @@ function Library:CreateWindow(cfg)
 		Parent = Rail,
 	})
 	corner(PowerBtn, 14 * scale)
-	local powerIc = icon("power-off", 17 * scale, false, Theme.SubText)
+	local powerIc = icon("x", 17 * scale, false, Theme.SubText)
 	powerIc.AnchorPoint = Vector2.new(0.5, 0.5)
 	powerIc.Position = UDim2.new(0.5, 0, 0.5, 0)
 	powerIc.Parent = PowerBtn
@@ -556,7 +555,7 @@ function Library:CreateWindow(cfg)
 			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, WIN_H) })
 			tween(TopBar, TI_S, { Position = UDim2.new(0, SIDE_W, 0, 0), Size = UDim2.new(1, -SIDE_W, 0, TOP_H) })
 			task.delay(0.12, function()
-				if Library._destroyed or not minimized then return end
+				if Library._destroyed or minimized then return end
 				Rail.Visible = true
 				Content.Visible = true
 			end)
