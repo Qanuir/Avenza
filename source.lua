@@ -49,6 +49,7 @@ local FONT_MAIN  = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.Fon
 
 local TI    = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TI_S  = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local TI_R  = TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
 ----------------------------------------------------------------------
 -- Connection tracking (for proper destroy)
@@ -88,37 +89,105 @@ local function stroke(parent, color, trans, thick)
 	})
 end
 
-local function addShadow(parent, blur, trans)
-	local ok, shadow = pcall(function()
-		return create("UIShadow", {
-			BlurRadius = UDim.new(0, blur or 16),
-			Transparency = trans or 0.5,
-			Parent = parent,
-		})
-	end)
-	return ok and shadow or nil
-end
-
 local function tween(obj, info, props)
 	local t = TweenService:Create(obj, info or TI, props)
 	t:Play()
 	return t
 end
 
+-- expanding press pulse; auto-clips the host
+local function ripple(host, color)
+	if host.ClipsDescendants == false then host.ClipsDescendants = true end
+	local d = math.max(host.AbsoluteSize.X, host.AbsoluteSize.Y) * 2.2
+	local r = create("Frame", {
+		BackgroundColor3 = color or Theme.Text,
+		BackgroundTransparency = 0.85,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.fromOffset(0, 0),
+		ZIndex = host.ZIndex + 5,
+		Parent = host,
+	})
+	create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = r })
+	tween(r, TI_R, { Size = UDim2.fromOffset(d, d), BackgroundTransparency = 1 })
+	task.delay(0.5, function() if r.Parent then r:Destroy() end end)
+end
+
+local SHADOW_IMG = "rbxassetid://6014261993"
+
+-- drop shadow: sibling rendered directly behind `parent`, kept in sync
+-- through tweens, drags, minimizes and hide/show (UIShadow is not creatable)
+local function addShadow(parent, blur, trans)
+	local holder = parent and parent.Parent
+	if not holder then return nil end
+	local pad = math.ceil(blur or 16)
+	local shadow = create("ImageLabel", {
+		Name = "_shadow",
+		BackgroundTransparency = 1,
+		Image = SHADOW_IMG,
+		ImageColor3 = Color3.new(0, 0, 0),
+		ImageTransparency = trans or 0.5,
+		ScaleType = Enum.ScaleType.Slice,
+		SliceCenter = Rect.new(49, 49, 450, 450),
+		ZIndex = math.max((parent.ZIndex or 1) - 1, 0),
+		Parent = holder,
+	})
+	local function sync()
+		if not parent.Parent then return end
+		local gtr = 0
+		pcall(function() gtr = parent.GroupTransparency or 0 end)
+		shadow.AnchorPoint = parent.AnchorPoint
+		shadow.Position = UDim2.new(parent.Position.X.Scale, parent.Position.X.Offset, parent.Position.Y.Scale, parent.Position.Y.Offset + 2)
+		shadow.Size = UDim2.new(parent.Size.X.Scale, parent.Size.X.Offset + pad * 2, parent.Size.Y.Scale, parent.Size.Y.Offset + pad * 2)
+		shadow.Visible = parent.Visible and gtr < 1
+	end
+	track(parent:GetPropertyChangedSignal("Position"):Connect(sync))
+	track(parent:GetPropertyChangedSignal("Size"):Connect(sync))
+	track(parent:GetPropertyChangedSignal("Visible"):Connect(sync))
+	pcall(function() track(parent:GetPropertyChangedSignal("GroupTransparency"):Connect(sync)) end)
+	track(parent.AncestryChanged:Connect(function(_, p)
+		if not p and shadow.Parent then shadow:Destroy() end
+	end))
+	sync()
+	return shadow
+end
+
+-- icons: BuilderIcons glyphs, rbxassetid images, with a hard fallback if the font fails
 local function icon(name, size, filled, color)
+	if type(name) == "string" and (name:match("^rbxassetid://") or name:match("^%d+$")) then
+		return create("ImageLabel", {
+			BackgroundTransparency = 1,
+			Image = name:match("^%d+$") and ("rbxassetid://" .. name) or name,
+			ImageColor3 = color or Theme.Text,
+			ScaleType = Enum.ScaleType.Fit,
+			Size = UDim2.fromOffset(size or 18, size or 18),
+		})
+	end
+	local ok, face = pcall(function()
+		return Font.new(BUILDER_ICONS, filled and Enum.FontWeight.Bold or Enum.FontWeight.Regular)
+	end)
 	return create("TextLabel", {
 		BackgroundTransparency = 1,
-		Text = name or "",
-		FontFace = Font.new(BUILDER_ICONS, filled and Enum.FontWeight.Bold or Enum.FontWeight.Regular),
+		Text = ok and (name or "") or "?",
+		FontFace = (ok and face) or Font.fromEnum(filled and Enum.Font.GothamBold or Enum.Font.GothamMedium),
 		TextColor3 = color or Theme.Text,
 		TextScaled = true,
 		Size = UDim2.fromOffset(size or 18, size or 18),
 	})
 end
 
+-- tint either TextLabels (TextColor3) or ImageLabels (ImageColor3) safely
+local function tintIcon(ic, color)
+	if ic:IsA("ImageLabel") or ic:IsA("ImageButton") then
+		return tween(ic, TI, { ImageColor3 = color })
+	end
+	return tween(ic, TI, { TextColor3 = color })
+end
+
 local function makeDraggable(frame, handle)
 	local dragging, dragInput, startPos, startFramePos
-	handle.InputBegan:Connect(function(inp)
+	track(handle.InputBegan:Connect(function(inp)
 		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			startPos = inp.Position
@@ -127,12 +196,12 @@ local function makeDraggable(frame, handle)
 				if inp.UserInputState == Enum.UserInputState.End then dragging = false end
 			end)
 		end
-	end)
-	handle.InputChanged:Connect(function(inp)
+	end))
+	track(handle.InputChanged:Connect(function(inp)
 		if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
 			dragInput = inp
 		end
-	end)
+	end))
 	track(UserInputService.InputChanged:Connect(function(inp)
 		if inp == dragInput and dragging then
 			local delta = inp.Position - startPos
@@ -143,27 +212,29 @@ local function makeDraggable(frame, handle)
 	end))
 end
 
+-- onUpdate(ax, ay, ended) -- ended=true only on mouse/touch release
 local function bindDrag(region, onUpdate)
 	local dragging = false
-	local function upd(inp)
+	local function upd(inp, ended)
 		local ap, sz = region.AbsolutePosition, region.AbsoluteSize
 		local ax = math.clamp((inp.Position.X - ap.X) / sz.X, 0, 1)
 		local ay = math.clamp((inp.Position.Y - ap.Y) / sz.Y, 0, 1)
-		onUpdate(ax, ay)
+		onUpdate(ax, ay, ended == true)
 	end
-	region.InputBegan:Connect(function(inp)
+	track(region.InputBegan:Connect(function(inp)
 		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-			dragging = true; upd(inp)
+			dragging = true; upd(inp, false)
 		end
-	end)
-	region.InputEnded:Connect(function(inp)
+	end))
+	track(region.InputEnded:Connect(function(inp)
 		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+			if dragging then upd(inp, true) end
 			dragging = false
 		end
-	end)
+	end))
 	track(UserInputService.InputChanged:Connect(function(inp)
 		if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-			upd(inp)
+			upd(inp, false)
 		end
 	end))
 end
@@ -203,6 +274,8 @@ end
 local Library = {}
 Library.__index = Library
 Library._destroyed = false
+Library._scale = 1
+Library._cleanups = {}
 
 -- kill any stale gui left over from a previous run / older build
 local GuiParent = getGuiParent()
@@ -212,7 +285,7 @@ do
 end
 
 local ScreenGui = create("ScreenGui", {
-	Name = "VaehzUI",
+	Name = "AvenzaUI",
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true,
@@ -228,6 +301,10 @@ function Library:Destroy()
 		pcall(function() conn:Disconnect() end)
 	end
 	table.clear(Connections)
+	for _, fn in Library._cleanups do
+		pcall(fn)
+	end
+	table.clear(Library._cleanups)
 	pcall(function() ScreenGui:Destroy() end)
 	if ENV[REG_KEY] == Library then
 		ENV[REG_KEY] = nil
@@ -253,20 +330,96 @@ local NotifHolder = create("Frame", {
 	}),
 })
 
+----------------------------------------------------------------------
+-- Tooltip manager (single floating label, follows cursor)
+----------------------------------------------------------------------
+local Tooltip = {}
+do
+	local tip = create("Frame", {
+		Name = "Tooltip",
+		BackgroundColor3 = Color3.fromRGB(22, 22, 27),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		AutomaticSize = Enum.AutomaticSize.XY,
+		Visible = false,
+		ZIndex = 50,
+		Parent = ScreenGui,
+	})
+	corner(tip, 8)
+	local tipStroke = stroke(tip, Theme.Stroke, 1)
+	create("UIPadding", {
+		PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
+		PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9),
+		Parent = tip,
+	})
+	local tipLbl = create("TextLabel", {
+		BackgroundTransparency = 1,
+		FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = 12,
+		TextTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.XY,
+		ZIndex = 51, Parent = tip,
+	})
+
+	local hoverObj, token = nil, 0
+	local function hide()
+		token += 1
+		hoverObj = nil
+		tween(tip, TI, { BackgroundTransparency = 1 })
+		tween(tipStroke, TI, { Transparency = 1 })
+		tween(tipLbl, TI, { TextTransparency = 1 })
+		task.delay(0.17, function()
+			if not hoverObj and not Library._destroyed then tip.Visible = false end
+		end)
+	end
+	track(UserInputService.InputChanged:Connect(function(inp)
+		if hoverObj and tip.Visible and inp.UserInputType == Enum.UserInputType.MouseMovement then
+			local mp = UserInputService:GetMouseLocation()
+			local maxX = tip.Parent.AbsoluteSize.X
+			local x = mp.X + 14
+			if tip.AbsoluteSize.X > 0 and x + tip.AbsoluteSize.X > maxX - 8 then
+				x = maxX - tip.AbsoluteSize.X - 8
+			end
+			tip.Position = UDim2.fromOffset(x, mp.Y + 12)
+		end
+	end))
+
+	function Tooltip.Attach(obj, text)
+		if type(text) ~= "string" or text == "" then return end
+		track(obj.MouseEnter:Connect(function()
+			hoverObj = obj
+			token += 1
+			local my = token
+			task.delay(0.4, function()
+				if Library._destroyed or hoverObj ~= obj or token ~= my then return end
+				tipLbl.Text = text
+				local mp = UserInputService:GetMouseLocation()
+				tip.Position = UDim2.fromOffset(mp.X + 14, mp.Y + 12)
+				tip.Visible = true
+				tween(tip, TI, { BackgroundTransparency = 0.05 })
+				tween(tipStroke, TI, { Transparency = STROKE_T })
+				tween(tipLbl, TI, { TextTransparency = 0 })
+			end)
+		end))
+		track(obj.MouseLeave:Connect(hide))
+		pcall(function() track(obj.MouseButton1Down:Connect(hide)) end)
+	end
+end
+
 function Library:Notify(cfg)
 	if Library._destroyed then return end
 	cfg = cfg or {}
 	local dur = cfg.Duration or 4
+	local nscale = Library._scale or 1
 
 	local card = create("Frame", {
 		BackgroundColor3 = Color3.fromRGB(22, 22, 27),
 		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 260, 0, 0),
+		Size = UDim2.new(0, 260 * nscale, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		ClipsDescendants = true,
 		Parent = NotifHolder,
 	})
-	corner(card, 14)
+	corner(card, 14 * nscale)
 	local st = stroke(card, Theme.Stroke, 1)
 
 	local accent = create("Frame", {
@@ -285,7 +438,7 @@ function Library:Notify(cfg)
 
 	local titleLbl = create("TextLabel", {
 		BackgroundTransparency = 1, Text = cfg.Title or "Notification", TextTransparency = 1,
-		FontFace = FONT_TITLE, TextColor3 = Theme.Text, TextSize = 14,
+		FontFace = FONT_TITLE, TextColor3 = Theme.Text, TextSize = 14 * nscale,
 		TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
 		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
 		LayoutOrder = 1, Parent = content,
@@ -294,15 +447,17 @@ function Library:Notify(cfg)
 	if cfg.Content then
 		bodyLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Text = cfg.Content, TextTransparency = 1,
-			FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 12,
+			FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = 12 * nscale,
 			TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
 			Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
 			LayoutOrder = 2, Parent = content,
 		})
 	end
 
-	card.Position = UDim2.new(0, 26, 0, 0)
-	tween(card, TI_S, { BackgroundTransparency = 0.06, Position = UDim2.new(0, 0, 0, 0) })
+	-- pop in/out with UIScale so we never fight UIListLayout over Position (no clip artifacts)
+	local pop = create("UIScale", { Scale = 0.96, Parent = card })
+	tween(pop, TI_S, { Scale = 1 })
+	tween(card, TI_S, { BackgroundTransparency = 0.06 })
 	tween(st, TI_S, { Transparency = 0.88 })
 	tween(accent, TI_S, { BackgroundTransparency = 0 })
 	tween(titleLbl, TI_S, { TextTransparency = 0 })
@@ -310,7 +465,8 @@ function Library:Notify(cfg)
 
 	task.delay(dur, function()
 		if Library._destroyed or not card.Parent then return end
-		tween(card, TI, { BackgroundTransparency = 1, Position = UDim2.new(0, 26, 0, 0) })
+		tween(pop, TI, { Scale = 0.96 })
+		tween(card, TI, { BackgroundTransparency = 1 })
 		tween(st, TI, { Transparency = 1 })
 		tween(accent, TI, { BackgroundTransparency = 1 })
 		tween(titleLbl, TI, { TextTransparency = 1 })
@@ -328,6 +484,8 @@ function Library:CreateWindow(cfg)
 	if cfg.Accent then Theme.Accent = cfg.Accent end
 
 	local scale = cfg.Scale or 1
+	Library._scale = scale
+	NotifHolder.Size = UDim2.new(0, 260 * scale, 1, -32)
 
 	local WIN_W = 580 * scale
 	local WIN_H = 400 * scale
@@ -353,6 +511,7 @@ function Library:CreateWindow(cfg)
 		BackgroundColor3 = Theme.Background,
 		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
+		Active = true, -- absorb clicks so they never fall through to the game
 		GroupTransparency = 1,
 		Parent = ScreenGui,
 	})
@@ -416,7 +575,7 @@ function Library:CreateWindow(cfg)
 
 	local function ctrlBtn(iconName, offsetX, hoverColor)
 		local b = create("TextButton", {
-			Text = "", AutoButtonColor = false,
+			Text = "", AutoButtonColor = false, Selectable = true,
 			BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, offsetX * scale, 0.5, 0),
@@ -424,17 +583,21 @@ function Library:CreateWindow(cfg)
 			Parent = TopBar,
 		})
 		corner(b, 16 * scale)
+		local bScale = create("UIScale", { Scale = 1, Parent = b })
+		b.MouseButton1Down:Connect(function() tween(bScale, TI, { Scale = 0.8 }) end)
+		b.MouseButton1Up:Connect(function() tween(bScale, TI_S, { Scale = 1 }) end)
 		local ic = icon(iconName, 15 * scale, false, Theme.SubText)
 		ic.AnchorPoint = Vector2.new(0.5, 0.5)
 		ic.Position = UDim2.new(0.5, 0, 0.5, 0)
 		ic.Parent = b
 		b.MouseEnter:Connect(function()
 			tween(b, TI, { BackgroundTransparency = CHIP_T })
-			tween(ic, TI, { TextColor3 = hoverColor or Theme.Text })
+			tintIcon(ic, hoverColor or Theme.Text)
 		end)
 		b.MouseLeave:Connect(function()
 			tween(b, TI, { BackgroundTransparency = 1 })
-			tween(ic, TI, { TextColor3 = Theme.SubText })
+			tintIcon(ic, Theme.SubText)
+			tween(bScale, TI, { Scale = 1 })
 		end)
 		return b
 	end
@@ -442,6 +605,9 @@ function Library:CreateWindow(cfg)
 	local MinBtn = ctrlBtn("minus", -14, Theme.Text)
 	local YtBtn  = ctrlBtn("youtube", -52, Color3.fromRGB(255, 80, 80))
 	local DcBtn  = ctrlBtn("discord", -90, Color3.fromRGB(114, 137, 248))
+	Tooltip.Attach(MinBtn, "Minimize")
+	Tooltip.Attach(YtBtn, "YouTube channel")
+	Tooltip.Attach(DcBtn, "Discord server")
 
 	local YT_LINK = "https://youtube.com/@Qanuir"
 	local DC_LINK = "https://discord.gg/Qanuir"
@@ -486,6 +652,7 @@ function Library:CreateWindow(cfg)
 		CanvasSize = UDim2.new(),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 0,
+		Selectable = true,
 		Parent = Rail,
 	}, {
 		create("UIListLayout", {
@@ -505,7 +672,7 @@ function Library:CreateWindow(cfg)
 	})
 
 	local PowerBtn = create("TextButton", {
-		Text = "", AutoButtonColor = false,
+		Text = "", AutoButtonColor = false, Selectable = true,
 		BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -10 * scale),
@@ -513,17 +680,18 @@ function Library:CreateWindow(cfg)
 		Parent = Rail,
 	})
 	corner(PowerBtn, 14 * scale)
+	Tooltip.Attach(PowerBtn, "Unload UI")
 	local powerIc = icon("x", 17 * scale, false, Theme.SubText)
 	powerIc.AnchorPoint = Vector2.new(0.5, 0.5)
 	powerIc.Position = UDim2.new(0.5, 0, 0.5, 0)
 	powerIc.Parent = PowerBtn
 	PowerBtn.MouseEnter:Connect(function()
 		tween(PowerBtn, TI, { BackgroundTransparency = 0.82, BackgroundColor3 = Color3.fromRGB(255, 85, 85) })
-		tween(powerIc, TI, { TextColor3 = Theme.Text })
+		tintIcon(powerIc, Theme.Text)
 	end)
 	PowerBtn.MouseLeave:Connect(function()
 		tween(PowerBtn, TI, { BackgroundTransparency = 1, BackgroundColor3 = Theme.Element })
-		tween(powerIc, TI, { TextColor3 = Theme.SubText })
+		tintIcon(powerIc, Theme.SubText)
 	end)
 
 	local Content = create("Frame", {
@@ -543,16 +711,77 @@ function Library:CreateWindow(cfg)
 		end)
 	end)
 
+	------------------------------------------------------------
+	-- Resize grip (bottom-right)
+	------------------------------------------------------------
+	local fullSize = UDim2.fromOffset(WIN_W, WIN_H)
+	local MAX_W, MAX_H = WIN_W + 360 * scale, WIN_H + 300 * scale
+	local Grip = create("TextButton", {
+		Name = "ResizeGrip", Text = "", AutoButtonColor = false, Selectable = false,
+		BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -4 * scale, 1, -4 * scale),
+		Size = UDim2.fromOffset(20 * scale, 20 * scale),
+		ZIndex = 6, Parent = BG,
+	})
+	local function gripMark(len, dx, dy)
+		local l = create("Frame", {
+			BackgroundColor3 = Theme.SubText, BackgroundTransparency = 0.35,
+			BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, dx * scale, 0.5, dy * scale),
+			Size = UDim2.fromOffset(len * scale, math.max(1, math.floor(scale + 0.5))),
+			Rotation = -45, Parent = Grip,
+		})
+		corner(l, 1)
+	end
+	gripMark(6, 3, -3)
+	gripMark(11, -1, 1)
+	Grip.MouseEnter:Connect(function() tween(Grip, TI, { BackgroundTransparency = 0.9 }) end)
+	Grip.MouseLeave:Connect(function() tween(Grip, TI, { BackgroundTransparency = 1 }) end)
+	do
+		local resizing, rInput, rStart, rSize
+		track(Grip.InputBegan:Connect(function(inp)
+			if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+				resizing = true
+				rStart = inp.Position
+				rSize = BG.AbsoluteSize
+			end
+		end))
+		track(Grip.InputEnded:Connect(function(inp)
+			if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+				resizing = false
+			end
+		end))
+		track(Grip.InputChanged:Connect(function(inp)
+			if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+				rInput = inp
+			end
+		end))
+		track(UserInputService.InputChanged:Connect(function(inp)
+			if inp == rInput and resizing then
+				local d = inp.Position - rStart
+				local w = math.floor(math.clamp(rSize.X + d.X, WIN_W, MAX_W) + 0.5)
+				local h = math.floor(math.clamp(rSize.Y + d.Y, WIN_H, MAX_H) + 0.5)
+				fullSize = UDim2.fromOffset(w, h)
+				BG.Size = fullSize
+			end
+		end))
+	end
+
+	------------------------------------------------------------
+	-- Minimize / restore
+	------------------------------------------------------------
 	local minimized = false
 	MinBtn.Activated:Connect(function()
 		minimized = not minimized
+		Grip.Visible = not minimized
 		if minimized then
 			Rail.Visible = false
 			Content.Visible = false
 			tween(TopBar, TI_S, { Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 0, TOP_H) })
-			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, TOP_H) })
+			tween(BG, TI_S, { Size = UDim2.fromOffset(fullSize.X.Offset, TOP_H) })
 		else
-			tween(BG, TI_S, { Size = UDim2.fromOffset(WIN_W, WIN_H) })
+			tween(BG, TI_S, { Size = fullSize })
 			tween(TopBar, TI_S, { Position = UDim2.new(0, SIDE_W, 0, 0), Size = UDim2.new(1, -SIDE_W, 0, TOP_H) })
 			task.delay(0.12, function()
 				if Library._destroyed or minimized then return end
@@ -562,12 +791,47 @@ function Library:CreateWindow(cfg)
 		end
 	end)
 
+	------------------------------------------------------------
+	-- Hide / show (smooth, with optional Lighting blur)
+	------------------------------------------------------------
 	local hidden = false
+
+	local blurFx
+	if cfg.Blur ~= false then
+		pcall(function()
+			blurFx = create("BlurEffect", { Name = "VaehzBlur", Size = 0, Parent = game:GetService("Lighting") })
+			tween(blurFx, TI_S, { Size = 14 })
+			table.insert(Library._cleanups, function()
+				pcall(function() blurFx:Destroy() end)
+			end)
+		end)
+	end
+
+	local function setHidden(h)
+		if hidden == h then return end
+		hidden = h
+		if h then
+			if blurFx then tween(blurFx, TI, { Size = 0 }) end
+			tween(winScale, TI, { Scale = 0.97 })
+			tween(BG, TI, { GroupTransparency = 1 })
+			task.delay(0.18, function()
+				if hidden and not Library._destroyed then BG.Visible = false end
+			end)
+		else
+			BG.Visible = true
+			if blurFx then tween(blurFx, TI_S, { Size = 14 }) end
+			tween(winScale, TI_S, { Scale = 1 })
+			tween(BG, TI_S, { GroupTransparency = 0 })
+		end
+	end
+	Window.SetHidden = setHidden
+	Window.IsHidden = function() return hidden end
+
 	track(UserInputService.InputBegan:Connect(function(inp, gp)
 		if gp then return end
-		if inp.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift) then
-			hidden = not hidden
-			BG.Visible = not hidden
+		if inp.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift)
+			or (cfg.GamepadToggle and inp.KeyCode == Enum.KeyCode.DPadUp) then
+			setHidden(not hidden)
 		end
 	end))
 
@@ -579,17 +843,27 @@ function Library:CreateWindow(cfg)
 		local Tab = { _order = 0 }
 
 		local btn = create("TextButton", {
-			Text = "", AutoButtonColor = false,
+			Text = "", AutoButtonColor = false, Selectable = true,
 			BackgroundColor3 = Theme.Element, BackgroundTransparency = 1,
 			Size = UDim2.fromOffset(42 * scale, 42 * scale),
 			Parent = TabList,
 		})
 		corner(btn, 14 * scale)
+		if tcfg.Name then Tooltip.Attach(btn, tcfg.Name) end
 
 		local ic = icon(tcfg.Icon or "circle", 19 * scale, false, Theme.SubText)
 		ic.AnchorPoint = Vector2.new(0.5, 0.5)
 		ic.Position = UDim2.new(0.5, 0, 0.5, 0)
 		ic.Parent = btn
+
+		local badge = create("Frame", {
+			BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -4 * scale, 0, 4 * scale),
+			Size = UDim2.fromOffset(8 * scale, 8 * scale),
+			Visible = false, ZIndex = 3, Parent = btn,
+		})
+		create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = badge })
 
 		local pageWrap = create("CanvasGroup", {
 			Name = "Page", BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -601,6 +875,7 @@ function Library:CreateWindow(cfg)
 			Size = UDim2.new(1, 0, 1, 0), CanvasSize = UDim2.new(),
 			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3 * scale,
 			ScrollBarImageColor3 = Theme.Stroke, ScrollBarImageTransparency = 0.6,
+			Selectable = true,
 			Parent = pageWrap,
 		}, {
 			create("UIListLayout", { Padding = UDim.new(0, 10 * scale), SortOrder = Enum.SortOrder.LayoutOrder }),
@@ -617,16 +892,17 @@ function Library:CreateWindow(cfg)
 			for _, t in Window.Tabs do
 				if t ~= Tab then t._wrap.Visible = false end
 				tween(t._btn, TI, { BackgroundTransparency = 1 })
-				tween(t._icon, TI, { TextColor3 = Theme.SubText })
+				tintIcon(t._icon, Theme.SubText)
 			end
 			Window._current = Tab
+			badge.Visible = false
 			tabLbl.Text = "/  " .. (tcfg.Name or "Tab")
 			pageWrap.Visible = true
 			pageWrap.GroupTransparency = 1
 			pageWrap.Position = UDim2.new(0.03, 0, 0, 0)
 			tween(pageWrap, TI_S, { GroupTransparency = 0, Position = UDim2.new(0, 0, 0, 0) })
 			tween(btn, TI, { BackgroundTransparency = 0.85 })
-			tween(ic, TI, { TextColor3 = Theme.Text })
+			tintIcon(ic, Theme.Text)
 		end
 
 		btn.MouseEnter:Connect(function()
@@ -635,11 +911,19 @@ function Library:CreateWindow(cfg)
 		btn.MouseLeave:Connect(function()
 			if Window._current ~= Tab then tween(btn, TI, { BackgroundTransparency = 1 }) end
 		end)
-		btn.Activated:Connect(select)
+		btn.Activated:Connect(function()
+			ripple(btn, Theme.Accent)
+			select()
+		end)
 
 		Tab._btn, Tab._icon, Tab._page, Tab._wrap, Tab._select = btn, ic, page, pageWrap, select
 		table.insert(Window.Tabs, Tab)
 		if #Window.Tabs == 1 then select() end
+
+		-- badge notification dot (auto-clears when the tab is opened)
+		function Tab:SetBadge(v)
+			badge.Visible = (v == true) and Window._current ~= Tab
+		end
 
 		local function newRow(height)
 			Tab._order += 1
@@ -653,6 +937,17 @@ function Library:CreateWindow(cfg)
 			corner(row, CARD_R)
 			stroke(row, Theme.Stroke, STROKE_T)
 			return row
+		end
+
+		-- shared hover: fill lift + accent hairline glow
+		local function rowHover(row, rowStroke)
+			return function() -- enter
+				tween(row, TI, { BackgroundTransparency = GLASS_HT })
+				if rowStroke then tween(rowStroke, TI, { Color = Theme.Accent, Transparency = 0.7 }) end
+			end, function() -- leave
+				tween(row, TI, { BackgroundTransparency = GLASS_T })
+				if rowStroke then tween(rowStroke, TI, { Color = Theme.Stroke, Transparency = STROKE_T }) end
+			end
 		end
 
 		------------------------------------------------------------
@@ -718,13 +1013,14 @@ function Library:CreateWindow(cfg)
 			bcfg = bcfg or {}
 			Tab._order += 1
 			local btnEl = create("TextButton", {
-				Text = "", AutoButtonColor = false,
+				Text = "", AutoButtonColor = false, Selectable = true,
 				BackgroundColor3 = Theme.Element, BackgroundTransparency = GLASS_T,
 				Size = UDim2.new(1, 0, 0, ROW_H), LayoutOrder = Tab._order,
 				BorderSizePixel = 0, Parent = page,
 			})
 			corner(btnEl, CARD_R)
-			stroke(btnEl, Theme.Stroke, STROKE_T)
+			local btnStroke = stroke(btnEl, Theme.Stroke, STROKE_T)
+			if bcfg.Tooltip then Tooltip.Attach(btnEl, bcfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = bcfg.Name or "Button",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
@@ -748,21 +1044,24 @@ function Library:CreateWindow(cfg)
 
 			btnEl.MouseEnter:Connect(function()
 				tween(btnEl, TI, { BackgroundTransparency = GLASS_HT })
+				tween(btnStroke, TI, { Color = Theme.Accent, Transparency = 0.6 })
 				tween(chip, TI, { BackgroundTransparency = 0.8 })
-				tween(chipIc, TI, { TextColor3 = Theme.Text })
+				tintIcon(chipIc, Theme.Text)
 			end)
 			btnEl.MouseLeave:Connect(function()
 				tween(btnEl, TI, { BackgroundTransparency = GLASS_T })
+				tween(btnStroke, TI, { Color = Theme.Stroke, Transparency = STROKE_T })
 				tween(chip, TI, { BackgroundTransparency = CHIP_T })
-				tween(chipIc, TI, { TextColor3 = Theme.SubText })
+				tintIcon(chipIc, Theme.SubText)
 			end)
 			btnEl.Activated:Connect(function()
+				ripple(btnEl, Theme.Accent)
 				tween(chip, TI, { BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.15 })
-				tween(chipIc, TI, { TextColor3 = Theme.Text })
+				tintIcon(chipIc, Theme.Text)
 				task.delay(0.14, function()
 					if Library._destroyed or not chip.Parent then return end
 					tween(chip, TI, { BackgroundColor3 = Theme.Element, BackgroundTransparency = CHIP_T })
-					tween(chipIc, TI, { TextColor3 = Theme.SubText })
+					tintIcon(chipIc, Theme.SubText)
 				end)
 				if bcfg.Callback then task.spawn(bcfg.Callback) end
 			end)
@@ -776,7 +1075,12 @@ function Library:CreateWindow(cfg)
 			tocfg = tocfg or {}
 			local state = tocfg.Default or false
 			local row = newRow(ROW_H)
-			local btnEl = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = row })
+			local rowStroke = row:FindFirstChildOfClass("UIStroke")
+			local btnEl = create("TextButton", {
+				Text = "", BackgroundTransparency = 1, Selectable = true,
+				Size = UDim2.new(1, 0, 1, 0), Parent = row,
+			})
+			if tocfg.Tooltip then Tooltip.Attach(btnEl, tocfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = tocfg.Name or "Toggle",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
@@ -796,10 +1100,11 @@ function Library:CreateWindow(cfg)
 				Size = UDim2.fromOffset(20 * scale, 20 * scale), BorderSizePixel = 0, Parent = track_,
 			})
 			corner(knob, 10 * scale)
-			addShadow(knob, 6 * scale, 0.6)
+			stroke(knob, Color3.new(0, 0, 0), 0.8) -- subtle definition instead of the dead UIShadow hack
 
-			btnEl.MouseEnter:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_HT }) end)
-			btnEl.MouseLeave:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_T }) end)
+			local enter, leave = rowHover(row, rowStroke)
+			btnEl.MouseEnter:Connect(enter)
+			btnEl.MouseLeave:Connect(leave)
 
 			local api = {}
 			function api:Set(v)
@@ -813,7 +1118,7 @@ function Library:CreateWindow(cfg)
 			end
 			function api:Get() return state end
 			btnEl.Activated:Connect(function() api:Set(not state) end)
-			if state and tocfg.Callback then task.spawn(tocfg.Callback, true) end
+			if state and tocfg.Callback and tocfg.FireOnInit ~= false then task.spawn(tocfg.Callback, true) end
 			api.Instance = row
 			return api
 		end
@@ -824,6 +1129,7 @@ function Library:CreateWindow(cfg)
 		function Tab:CreateStat(scfg)
 			scfg = scfg or {}
 			local row = newRow(40 * scale)
+			if scfg.Tooltip then Tooltip.Attach(row, scfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = scfg.Name or "Stat",
 				FontFace = FONT_MAIN, TextColor3 = Theme.SubText, TextSize = FONT_MAIN_SZ,
@@ -841,7 +1147,7 @@ function Library:CreateWindow(cfg)
 		end
 
 		------------------------------------------------------------
-		-- 6. Slider
+		-- 6. Slider (drag bar + type-in value + suffix + step buttons)
 		------------------------------------------------------------
 		function Tab:CreateSlider(slcfg)
 			slcfg = slcfg or {}
@@ -849,21 +1155,68 @@ function Library:CreateWindow(cfg)
 			local inc = slcfg.Increment or 1
 			local value = math.clamp(slcfg.Default or min, min, max)
 			local row = newRow(56 * scale)
+			local rowStroke = row:FindFirstChildOfClass("UIStroke")
+			if slcfg.Tooltip then Tooltip.Attach(row, slcfg.Tooltip) end
 
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = slcfg.Name or "Slider",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
-				TextXAlignment = Enum.TextXAlignment.Left,
+				TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
 				Position = UDim2.new(0, PAD_MED, 0, 9 * scale),
-				Size = UDim2.new(1, -(80 * scale), 0, 16 * scale), Parent = row,
+				Size = UDim2.new(1, -(144 * scale), 0, 16 * scale), Parent = row,
 			})
-			local valLbl = create("TextLabel", {
-				BackgroundTransparency = 1, Text = tostring(value),
+
+			local suffix = slcfg.Suffix or ""
+			local function fmtVal(v) return tostring(v) .. suffix end
+			local api = {}
+
+			local valWrap = create("Frame", {
+				BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -PAD_MED, 0, 7 * scale),
+				Size = UDim2.fromOffset(118 * scale, 20 * scale), Parent = row,
+			}, {
+				create("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Right,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					Padding = UDim.new(0, 5 * scale), SortOrder = Enum.SortOrder.LayoutOrder,
+				}),
+			})
+
+			local function stepBtn(txt, delta, order)
+				local b = create("TextButton", {
+					Text = "", AutoButtonColor = false, Selectable = true,
+					BackgroundColor3 = Theme.Element, BackgroundTransparency = CHIP_T,
+					Size = UDim2.fromOffset(20 * scale, 20 * scale), LayoutOrder = order,
+					BorderSizePixel = 0, Parent = valWrap,
+				})
+				corner(b, 7 * scale)
+				local lbl = create("TextLabel", {
+					BackgroundTransparency = 1, Text = txt, FontFace = FONT_TITLE,
+					TextColor3 = Theme.SubText, TextSize = FONT_SUB_SZ,
+					Size = UDim2.new(1, 0, 1, 0), Parent = b,
+				})
+				b.MouseEnter:Connect(function() tween(lbl, TI, { TextColor3 = Theme.Text }) end)
+				b.MouseLeave:Connect(function() tween(lbl, TI, { TextColor3 = Theme.SubText }) end)
+				b.Activated:Connect(function()
+					ripple(b, Theme.Accent)
+					api:Set(value + delta)
+				end)
+			end
+
+			local valBox = create("TextBox", {
+				BackgroundColor3 = Theme.Element, BackgroundTransparency = 0.92,
+				Text = fmtVal(value), ClearTextOnFocus = false,
 				FontFace = FONT_TITLE, TextColor3 = Theme.Accent, TextSize = FONT_MAIN_SZ,
-				TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0),
-				Position = UDim2.new(1, -PAD_MED, 0, 9 * scale),
-				Size = UDim2.new(0, 60 * scale, 0, 16 * scale), Parent = row,
+				LayoutOrder = 2, Size = UDim2.fromOffset(54 * scale, 20 * scale), Parent = valWrap,
 			})
+			corner(valBox, 7 * scale)
+			local vbStroke = stroke(valBox, Theme.Stroke, STROKE_T)
+			valBox.Focused:Connect(function() tween(vbStroke, TI, { Color = Theme.Accent, Transparency = 0.25 }) end)
+
+			stepBtn("-", -inc, 1)
+			stepBtn("+", inc, 3)
+
 			local trackBar = create("Frame", {
 				BackgroundColor3 = Theme.Off, BackgroundTransparency = 0.85,
 				AnchorPoint = Vector2.new(0, 1),
@@ -884,20 +1237,48 @@ function Library:CreateWindow(cfg)
 				Size = UDim2.fromOffset(16 * scale, 16 * scale), BorderSizePixel = 0, ZIndex = 2, Parent = trackBar,
 			})
 			corner(knob, 8 * scale)
-			addShadow(knob, 6 * scale, 0.6)
+			stroke(knob, Color3.new(0, 0, 0), 0.8)
 
-			local api = {}
 			local function apply(alpha, fire)
 				local raw = min + (max - min) * alpha
 				value = math.clamp(math.floor(raw / inc + 0.5) * inc, min, max)
 				local a = (max - min) == 0 and 0 or (value - min) / (max - min)
 				fill.Size = UDim2.new(a, 0, 1, 0)
 				knob.Position = UDim2.new(a, 0, 0.5, 0)
-				valLbl.Text = tostring(value)
+				valBox.Text = fmtVal(value)
 				if fire and slcfg.Callback then task.spawn(slcfg.Callback, value) end
 			end
-			bindDrag(trackBar, function(ax) apply(ax, true) end)
-			function api:Set(v) apply((math.clamp(v, min, max) - min) / (max - min), true) end
+
+			-- fire on release by default; cfg.Live = true for per-move updates
+			bindDrag(trackBar, function(ax, _, ended)
+				if ended then
+					apply(ax, true)
+				elseif slcfg.Live then
+					apply(ax, true)
+				else
+					apply(ax, false)
+				end
+			end)
+
+			valBox.FocusLost:Connect(function(enterPressed)
+				tween(vbStroke, TI, { Color = Theme.Stroke, Transparency = STROKE_T })
+				if not enterPressed then valBox.Text = fmtVal(value); return end
+				local n = tonumber((valBox.Text:gsub("[^%d%.%-]", "")))
+				if n then
+					api:Set(n)
+				else
+					valBox.Text = fmtVal(value)
+				end
+			end)
+
+			local enter, leave = rowHover(row, rowStroke)
+			row.MouseEnter:Connect(enter)
+			row.MouseLeave:Connect(leave)
+
+			function api:Set(v)
+				v = math.clamp(tonumber(v) or min, min, max)
+				apply((max - min) == 0 and 0 or (v - min) / (max - min), true)
+			end
 			function api:Get() return value end
 			api.Instance = row
 			return api
@@ -909,6 +1290,7 @@ function Library:CreateWindow(cfg)
 		function Tab:CreateTextbox(txcfg)
 			txcfg = txcfg or {}
 			local row = newRow(ROW_H)
+			if txcfg.Tooltip then Tooltip.Attach(row, txcfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = txcfg.Name or "Textbox",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
@@ -961,7 +1343,12 @@ function Library:CreateWindow(cfg)
 
 			local row = newRow(ROW_H)
 			row.ClipsDescendants = true
-			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, ROW_H), Parent = row })
+			local rowStroke = row:FindFirstChildOfClass("UIStroke")
+			local header = create("TextButton", {
+				Text = "", BackgroundTransparency = 1, Selectable = true,
+				Size = UDim2.new(1, 0, 0, ROW_H), Parent = row,
+			})
+			if ccfg.Tooltip then Tooltip.Attach(header, ccfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = ccfg.Name or "Color",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
@@ -1042,11 +1429,19 @@ function Library:CreateWindow(cfg)
 				swatch.BackgroundColor3 = color
 				if fire and ccfg.Callback then task.spawn(ccfg.Callback, color) end
 			end
-			bindDrag(sv, function(ax, ay) s = ax; v = 1 - ay; refresh(true) end)
-			bindDrag(hue, function(_, ay) h = ay; refresh(true) end)
+			-- callbacks fire on release; cfg.Live = true for per-move updates
+			bindDrag(sv, function(ax, ay, ended)
+				s = ax; v = 1 - ay
+				refresh(ccfg.Live == true or ended)
+			end)
+			bindDrag(hue, function(_, ay, ended)
+				h = ay
+				refresh(ccfg.Live == true or ended)
+			end)
 
-			header.MouseEnter:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_HT }) end)
-			header.MouseLeave:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_T }) end)
+			local enter, leave = rowHover(row, rowStroke)
+			header.MouseEnter:Connect(enter)
+			header.MouseLeave:Connect(leave)
 
 			local open = false
 			header.Activated:Connect(function()
@@ -1085,7 +1480,12 @@ function Library:CreateWindow(cfg)
 
 			local row = newRow(ROW_H)
 			row.ClipsDescendants = true
-			local header = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, ROW_H), Parent = row })
+			local rowStroke = row:FindFirstChildOfClass("UIStroke")
+			local header = create("TextButton", {
+				Text = "", BackgroundTransparency = 1, Selectable = true,
+				Size = UDim2.new(1, 0, 0, ROW_H), Parent = row,
+			})
+			if dcfg.Tooltip then Tooltip.Attach(header, dcfg.Tooltip) end
 			create("TextLabel", {
 				BackgroundTransparency = 1, Text = dcfg.Name or "Dropdown",
 				FontFace = FONT_MAIN, TextColor3 = Theme.Text, TextSize = FONT_MAIN_SZ,
@@ -1132,7 +1532,7 @@ function Library:CreateWindow(cfg)
 				table.clear(optionBtns)
 				for i, opt in options do
 					local ob = create("TextButton", {
-						Text = "", AutoButtonColor = false,
+						Text = "", AutoButtonColor = false, Selectable = true,
 						BackgroundColor3 = Theme.Element, BackgroundTransparency = 0.95,
 						Size = UDim2.new(1, 0, 0, 30 * scale), LayoutOrder = i, BorderSizePixel = 0, Parent = list,
 					})
@@ -1152,6 +1552,7 @@ function Library:CreateWindow(cfg)
 					ob.MouseEnter:Connect(function() tween(ob, TI, { BackgroundTransparency = 0.9 }) end)
 					ob.MouseLeave:Connect(function() tween(ob, TI, { BackgroundTransparency = 0.95 }) end)
 					ob.Activated:Connect(function()
+						ripple(ob, Theme.Accent)
 						if multi then
 							selected[opt] = not selected[opt]
 						else
@@ -1202,10 +1603,14 @@ function Library:CreateWindow(cfg)
 					end)
 				end
 			end
-			header.Activated:Connect(function() api._toggle() end)
+			header.Activated:Connect(function()
+				ripple(header, Theme.Accent)
+				api._toggle()
+			end)
 
-			header.MouseEnter:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_HT }) end)
-			header.MouseLeave:Connect(function() tween(row, TI, { BackgroundTransparency = GLASS_T }) end)
+			local enter, leave = rowHover(row, rowStroke)
+			header.MouseEnter:Connect(enter)
+			header.MouseLeave:Connect(leave)
 
 			function api:Refresh(newOpts)
 				options = newOpts or options
