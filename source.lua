@@ -69,6 +69,16 @@ local FONT_HEADLINE = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.
 local FONT_BODY = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Regular)
 local FONT_BODY_MED = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)
 
+-- Legacy fallback for FontFace compatibility
+local function safeFont(weight)
+	local weights = {
+		Regular = Enum.FontWeight.Regular,
+		Medium = Enum.FontWeight.Medium,
+		Bold = Enum.FontWeight.Bold,
+	}
+	return weights[weight] or Enum.FontWeight.Regular
+end
+
 -- Animation curves (iOS-style spring and ease)
 local TI    = TweenInfo.new(0.20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TI_S  = TweenInfo.new(0.32, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
@@ -159,13 +169,12 @@ local function icon(name, size, filled, color)
 			Size = UDim2.fromOffset(size or 18, size or 18),
 		})
 	end
-	local ok, face = pcall(function()
-		return Font.new(BUILDER_ICONS, filled and Enum.FontWeight.Bold or Enum.FontWeight.Regular)
-	end)
+	-- Use Font.fromEnum for maximum compatibility
+	local fallbackFont = filled and Enum.Font.GothamBold or Enum.Font.GothamMedium
 	return create("TextLabel", {
 		BackgroundTransparency = 1,
-		Text = ok and (name or "") or "?",
-		FontFace = (ok and face) or Font.fromEnum(filled and Enum.Font.GothamBold or Enum.Font.GothamMedium),
+		Text = name or "",
+		FontFace = Font.fromEnum(fallbackFont),
 		TextColor3 = color or Theme.Text,
 		TextScaled = true,
 		Size = UDim2.fromOffset(size or 18, size or 18),
