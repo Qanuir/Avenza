@@ -63,8 +63,8 @@ local RADIUS_MED = 12            -- Cards, sections
 local RADIUS_SMALL = 8           -- Buttons, inputs
 local RADIUS_PILL = 1000         -- Toggle track, pills
 
--- iOS Typography
-local FONT_TITLE = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Semibold)
+-- iOS Typography (Roblox FontWeight enums)
+local FONT_TITLE = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
 local FONT_HEADLINE = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)
 local FONT_BODY = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Regular)
 local FONT_BODY_MED = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)
